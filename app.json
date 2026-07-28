@@ -11,7 +11,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.grow.farmwizard",
-      "buildNumber": "11",
+      "buildNumber": "15",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       },
@@ -23,7 +23,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.grow.farmwizard",
-      "versionCode": 11,
+      "versionCode": 16,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
@@ -53,9 +53,9 @@
         "expo-build-properties",
         {
           "android": {
-            "compileSdkVersion": 35,
-            "targetSdkVersion": 35,
-            "buildToolsVersion": "35.0.0"
+            "compileSdkVersion": 36,
+            "targetSdkVersion": 36,
+            "buildToolsVersion": "36.0.0"
           }
         }
       ]

@@ -10,6 +10,7 @@ import {
   getFarmCycleRecords,
   summarizeFarmCycleRecords,
 } from "@/utils/farmDashboard";
+import { householdGardenTrends } from "@/constants/gardenTrends";
 
 const healthLabel = (health: number) => {
   if (health >= 90) return "Excellent";
@@ -105,6 +106,27 @@ export default function FarmPerformance() {
                 : "Complete a farming session to unlock crop-specific insights, harvest health trends, and garden planning guidance."}
             </Text>
           </View>
+
+          <Text className="text-white font-pbold text-lg mb-2">Trending home-garden upgrades</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            className="mb-4"
+          >
+            {householdGardenTrends.map((trend) => (
+              <View
+                key={trend.id}
+                className="bg-black/30 rounded-2xl p-3 mr-3"
+                style={{ width: 210 }}
+              >
+                <Text className="text-3xl">{trend.emoji}</Text>
+                <Text className="text-white font-pbold mt-1">{trend.title}</Text>
+                <Text className="text-white/75 text-xs mt-1 leading-4">
+                  {trend.tip}
+                </Text>
+              </View>
+            ))}
+          </ScrollView>
 
           <Text className="text-white font-pbold text-lg mb-2">Recent cycle results</Text>
           {records.length === 0 ? (

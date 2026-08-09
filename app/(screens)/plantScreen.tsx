@@ -48,6 +48,7 @@ import BannerAdComponent from "@/utils/BannerAdComponent";
 import { schedulePausedSessionReminder } from "@/utils/notifications";
 import { recordEvent } from "@/utils/engagement";
 import { canShowInterstitial, markInterstitialShown } from "@/utils/adFrequency";
+import { getTrendTipForSession } from "@/constants/gardenTrends";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 // Long grocery-garden session: each phase maps to real crop stages while
@@ -290,6 +291,12 @@ const PlantScreen = () => {
   const currentStagePlan = plantStagePlan[getPlantStage()] || plantStagePlan[0];
   const emojiPlantSize = 96 + getPlantStage() * 44;
   const getSessionTip = () => {
+    const trendTip = getTrendTipForSession({
+      currentSeason,
+      waterLevel,
+      nutrientLevel,
+      hasThreat: Boolean(activeThreat && !activeThreat.resolved),
+    });
     if (activeThreat && !activeThreat.resolved) {
       return activeThreat.type === "disease"
         ? "🐛 Pest spotted: tap the crop or spray quickly before health drops."
@@ -299,7 +306,7 @@ const PlantScreen = () => {
     if (nutrientLevel < 25) return "🪱 Low nutrients: feed lightly with compost or fertilizer.";
     if (currentSeason === "dry") return "☀️ Dry spell: check soil more often and shade seedlings.";
     if (currentSeason === "raining") return "🌧️ Rainy spell: watch for fungus and nutrient leaching.";
-    return `🌿 ${currentStagePlan?.name || "Growth"}: ${growthCycle.message}`;
+    return `${trendTip.emoji} ${trendTip.title}: ${trendTip.tip}`;
   };
   const realDaysElapsed = Math.min(
     plantCycleDays,

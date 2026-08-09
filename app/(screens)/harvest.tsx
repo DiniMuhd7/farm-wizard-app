@@ -20,6 +20,7 @@ import {
 import { recordEvent } from "@/utils/engagement";
 import { submitDailyScore } from "@/services/rewardsApi";
 import { dailyCrop } from "@/utils/dailyChallenge";
+import { saveFarmCycleRecord } from "@/utils/farmDashboard";
 
 const REWARD_ADS_VIEW_LIMIT = 3;
 const AD_BONUS_POINTS = 50;
@@ -50,8 +51,8 @@ const Harvest = () => {
   // bonus must stay numeric — it was a string (.toFixed) which forced the
   // whole total into string concatenation, garbling/inflating payouts.
   const bonus = Number(plantHealth) / 100;
-  // Harvest level bonus reduced (was 500/level) to keep WizPoint minting in
-  // line with the WZP->USD rate and the daily earning cap.
+  // Harvest level bonus reduced (was 500/level) to keep Garden Point earning
+  // useful for planning without making rewards the primary gameplay loop.
   const totalSocre =
     Number(score) + bonus + 100 * Number(userLevel);
 
@@ -183,6 +184,17 @@ const Harvest = () => {
       recordEvent("harvest");
       recordEvent("level_up");
       if (Number(plantHealth) >= 90) recordEvent("perfect_harvest");
+
+      saveFarmCycleRecord({
+        plantName: plant.name,
+        displayName: plant.diplayName || plant.name,
+        emoji: plant.emoji || "🌱",
+        cycleDays: plant.cycleDays || 0,
+        stageName: plant.stages?.[3]?.name || "Harvest",
+        stageIndex: 3,
+        score: Number(Number(totalSocre).toFixed(2)),
+        plantHealth: Number(plantHealth),
+      }).catch(() => {});
 
       // Daily challenge: if you played today's featured crop, submit the
       // score to the daily leaderboard (best score per day is kept).

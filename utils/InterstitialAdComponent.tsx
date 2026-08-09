@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import {
   InterstitialAd as InterstitialAdModule,
   AdEventType,
-  TestIds,
 } from "react-native-google-mobile-ads";
 
 interface Props {

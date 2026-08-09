@@ -130,12 +130,15 @@ const SelectSeed = () => {
                   selectedIndex === index ? "white" : "rgba(255,255,255,0.4)",
               }}
             >
-              <Image
-                source={seed.icon}
-                // className="w-8 h-8"
-                resizeMode="contain"
-                style={{ width: width * 0.14, height: width * 0.14 }}
-              />
+              {seed.icon ? (
+                <Image
+                  source={seed.icon}
+                  resizeMode="contain"
+                  style={{ width: width * 0.14, height: width * 0.14 }}
+                />
+              ) : (
+                <Text style={{ fontSize: width * 0.09 }}>{seed.emoji || "🌱"}</Text>
+              )}
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -201,16 +204,21 @@ const SelectSeed = () => {
                 </Text>
               </View>
             )}
-            <Image
-              source={selectedSeed.iconLg}
-              // className="w-40 h-40 mb-6"
-              style={{
-                width: width * 0.5,
-                height: width * 0.5,
-                marginBottom: 10,
-              }}
-              resizeMode="contain"
-            />
+            {selectedSeed.iconLg ? (
+              <Image
+                source={selectedSeed.iconLg}
+                style={{
+                  width: width * 0.5,
+                  height: width * 0.5,
+                  marginBottom: 10,
+                }}
+                resizeMode="contain"
+              />
+            ) : (
+              <Text style={{ fontSize: width * 0.32, marginBottom: 10 }}>
+                {selectedSeed.emoji || "🌱"}
+              </Text>
+            )}
             <Text
               //className="text-[#7B6C32] text-center px-2 mb-6"
               style={{
@@ -219,7 +227,7 @@ const SelectSeed = () => {
                 paddingHorizontal: 10,
               }}
             >
-              {t("messages.seed_info")}
+              {selectedSeed.gardenType} • {selectedSeed.spacing}
             </Text>
           </View>
 

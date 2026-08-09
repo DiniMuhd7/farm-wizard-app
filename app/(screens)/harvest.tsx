@@ -20,6 +20,7 @@ import {
 import { recordEvent } from "@/utils/engagement";
 import { submitDailyScore } from "@/services/rewardsApi";
 import { dailyCrop } from "@/utils/dailyChallenge";
+import { saveFarmCycleRecord } from "@/utils/farmDashboard";
 
 const REWARD_ADS_VIEW_LIMIT = 3;
 const AD_BONUS_POINTS = 50;
@@ -35,12 +36,38 @@ const Harvest = () => {
   const [showRewardAd, setShowRewardAd] = useState(false);
   const [bonusEarned, setBonusEarned] = useState(false);
   const isPremiumUser = user?.isPremium === true;
-  const { name, userLevel, score, plantHealth } = useLocalSearchParams();
+  const {
+    name,
+    userLevel,
+    score,
+    plantHealth,
+    companionNames,
+    offlineGardenData,
+    simulationDays,
+  } = useLocalSearchParams();
   // const plant = plantGrowth.filter((plant) => plant.name === name)[0];
   const plants = usePlantGrowth();
   const plant = plants.find((plant) => plant.name === name);
   const params = useLocalSearchParams();
   const plantName = Array.isArray(params.name) ? params.name[0] : params.name;
+  const companions = String(companionNames || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const offlineGarden = (() => {
+    try {
+      return offlineGardenData ? JSON.parse(String(offlineGardenData)) : null;
+    } catch {
+      return null;
+    }
+  })();
+  const offlineComparison = offlineGarden
+    ? {
+        healthGap: Math.round(Number(plantHealth) - Number(offlineGarden.health || 0)),
+        stageGap: 3 - Number(offlineGarden.growthStage || 0),
+        dayGap: Number(simulationDays || 0) - Number(offlineGarden.daysGrowing || 0),
+      }
+    : undefined;
   if (!plant) {
     router.replace("/(screens)/selectSeed");
     return null;
@@ -50,8 +77,8 @@ const Harvest = () => {
   // bonus must stay numeric — it was a string (.toFixed) which forced the
   // whole total into string concatenation, garbling/inflating payouts.
   const bonus = Number(plantHealth) / 100;
-  // Harvest level bonus reduced (was 500/level) to keep WizPoint minting in
-  // line with the WZP->USD rate and the daily earning cap.
+  // Harvest level bonus reduced (was 500/level) to keep Garden Point earning
+  // useful for planning without making rewards the primary gameplay loop.
   const totalSocre =
     Number(score) + bonus + 100 * Number(userLevel);
 
@@ -184,6 +211,23 @@ const Harvest = () => {
       recordEvent("level_up");
       if (Number(plantHealth) >= 90) recordEvent("perfect_harvest");
 
+      saveFarmCycleRecord({
+        plantName: plant.name,
+        displayName: plant.diplayName || plant.name,
+        emoji: plant.emoji || "🌱",
+        cycleDays: plant.cycleDays || 0,
+        stageName: plant.stages?.[3]?.name || "Harvest",
+        stageIndex: 3,
+        score: Number(Number(totalSocre).toFixed(2)),
+        plantHealth: Number(plantHealth),
+        companionPlants: companions,
+        simulationDays: Number(simulationDays || 0),
+        nutritionStrength: plant.nutrition?.strength || "Garden freshness",
+        nutritionImpact: plant.nutrition?.impact || "Adds fresh produce variety to household meals.",
+        offlineGarden: offlineGarden || undefined,
+        offlineComparison,
+      }).catch(() => {});
+
       // Daily challenge: if you played today's featured crop, submit the
       // score to the daily leaderboard (best score per day is kept).
       if (plantName === dailyCrop()) {
@@ -234,6 +278,24 @@ const Harvest = () => {
         <Text className="text-center text-xl p-4 my-2 text-white">
           {t("messages.harvest")}
         </Text>
+        <View className="bg-black/25 rounded-2xl px-4 py-3 w-[88%]">
+          <Text className="text-white text-center font-pbold">
+            {plant.emoji || "🌱"} Nutrition strength: {plant.nutrition?.strength || "Fresh produce"}
+          </Text>
+          <Text className="text-yellow-100 text-center text-xs mt-1">
+            {plant.nutrition?.impact || "Adds fresh garden variety to household meals."}
+          </Text>
+          {companions.length > 0 && (
+            <Text className="text-white/80 text-center text-xs mt-1">
+              Companion harvest tracked: {companions.join(", ")}
+            </Text>
+          )}
+          {offlineComparison && (
+            <Text className="text-white/80 text-center text-xs mt-1">
+              Offline comparison: {offlineComparison.healthGap >= 0 ? "+" : ""}{offlineComparison.healthGap}% health vs {offlineGarden.plantName}.
+            </Text>
+          )}
+        </View>
 
         {!isPremiumUser && !bonusEarned && (
           <CustomButton

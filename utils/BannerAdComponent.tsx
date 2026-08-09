@@ -6,12 +6,8 @@ import {
   Linking,
   StyleSheet,
 } from "react-native";
-import {
-  BannerAd,
-  BannerAdSize,
-  TestIds,
-} from "react-native-google-mobile-ads";
-import { Cross } from "lucide-react-native";
+import { BannerAd, BannerAdSize } from "react-native-google-mobile-ads";
+import { Cross, ChevronRight } from "lucide-react-native";
 
 interface Props {
   adUnitId?: string;
@@ -21,23 +17,32 @@ interface Props {
 
 const LIFEGATE_URL = "https://mobile.dshub.com.ng";
 
+const openLifeGate = () => Linking.openURL(LIFEGATE_URL).catch(() => {});
+
 // In-house fallback banner shown whenever AdMob has no ad to serve.
+// Farm Wizard themed so the fallback feels like part of the garden UI while
+// still being clearly separated as a sponsored health message.
 const LifeGateBanner = () => (
   <TouchableOpacity
     style={styles.lifeGate}
-    activeOpacity={0.85}
-    onPress={() => Linking.openURL(LIFEGATE_URL).catch(() => {})}
+    activeOpacity={0.88}
+    onPress={openLifeGate}
+    accessibilityRole="link"
+    accessibilityLabel="Open LifeGate Mobile health app"
   >
     <View style={styles.lifeGateIcon}>
-      <Cross size={26} color="#fff" fill="#fff" />
+      <Cross size={23} color="#17351F" strokeWidth={3} />
     </View>
     <View style={styles.lifeGateTextWrap}>
-      <Text style={styles.lifeGateTitle}>
-        Don't wait until it's too late
-      </Text>
+      <Text style={styles.sponsored}>Sponsored care partner</Text>
+      <Text style={styles.lifeGateTitle}>LifeGate Mobile</Text>
       <Text style={styles.lifeGateBody}>
-        Get LifeGate Mobile to manage your health.
+        Healthy gardeners grow healthy gardens — check care options anytime.
       </Text>
+    </View>
+    <View style={styles.ctaButton}>
+      <Text style={styles.ctaText}>Open</Text>
+      <ChevronRight size={15} color="#17351F" strokeWidth={3} />
     </View>
   </TouchableOpacity>
 );
@@ -86,34 +91,59 @@ const styles = StyleSheet.create({
   lifeGate: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ffffff",
-    borderTopWidth: 2,
-    borderTopColor: "#E53935",
-    paddingVertical: 8,
-    paddingHorizontal: 14,
+    backgroundColor: "#17351F",
+    borderTopWidth: 1,
+    borderTopColor: "#F7E7A1",
+    borderBottomWidth: 1,
+    borderBottomColor: "#2F7D3D",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
     width: "100%",
   },
   lifeGateIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: "#E53935",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#F7E7A1",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    marginRight: 10,
   },
   lifeGateTextWrap: {
     flex: 1,
   },
-  lifeGateTitle: {
-    color: "#B71C1C",
+  sponsored: {
+    color: "#A7F3D0",
+    fontSize: 10,
     fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  lifeGateTitle: {
+    color: "#FFFFFF",
+    fontWeight: "800",
     fontSize: 14,
+    marginTop: 1,
   },
   lifeGateBody: {
-    color: "#333333",
+    color: "#E7F8E7",
     fontSize: 12,
     marginTop: 1,
+  },
+  ctaButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F9D65C",
+    borderRadius: 999,
+    paddingVertical: 7,
+    paddingLeft: 12,
+    paddingRight: 8,
+    marginLeft: 8,
+  },
+  ctaText: {
+    color: "#17351F",
+    fontSize: 12,
+    fontWeight: "800",
   },
 });
 

@@ -48,11 +48,12 @@ import BannerAdComponent from "@/utils/BannerAdComponent";
 import { schedulePausedSessionReminder } from "@/utils/notifications";
 import { recordEvent } from "@/utils/engagement";
 import { canShowInterstitial, markInterstitialShown } from "@/utils/adFrequency";
+import { getTrendTipForSession } from "@/constants/gardenTrends";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-// Total session length. Casual-game best practice keeps a play session
-// in the 1-3 minute range; 3 minutes gives 45s per growth stage.
-const GAME_DURATION = 3 * 60;
+// Long grocery-garden session: each phase maps to real crop stages while
+// keeping a single mobile session playable for household farmers.
+const GAME_DURATION = 12 * 60;
 const TEN_MINUTES = GAME_DURATION; // legacy alias used throughout this file
 const PHASE_DURATION = GAME_DURATION / 4; // one growth stage
 
@@ -91,7 +92,7 @@ const buildSeasonSchedule = (total: number): SeasonSegment[] => {
 };
 
 const PlantScreen = () => {
-  const { name } = useLocalSearchParams();
+  const { name, names, offlineGardenData } = useLocalSearchParams();
   const { user } = useLoginContext();
   if (!user) {
     router.replace("/");
@@ -107,7 +108,21 @@ const PlantScreen = () => {
   const [userLevel, setUserLevel] = useState(1);
   const MAX_BUGS = userLevel; //2;
   const plants = usePlantGrowth();
-  const plant = plants.find((plant) => plant.name === name);
+  const selectedPlantNames = String(names || name)
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const plant = plants.find((plant) => plant.name === name) || plants.find((plant) => plant.name === selectedPlantNames[0]);
+  const companionPlants = plants.filter(
+    (item) => selectedPlantNames.includes(item.name) && item.name !== plant?.name
+  );
+  const offlineGarden = (() => {
+    try {
+      return offlineGardenData ? JSON.parse(String(offlineGardenData)) : null;
+    } catch {
+      return null;
+    }
+  })();
 
   if (!plant) {
     router.replace("/(screens)/selectSeed");
@@ -285,6 +300,32 @@ const PlantScreen = () => {
     router.replace("/(screens)/selectSeed");
     return null;
   }
+  const plantStagePlan = plant?.stages || [];
+  const plantCycleDays = plant?.cycleDays || 0;
+  const currentStagePlan = plantStagePlan[getPlantStage()] || plantStagePlan[0];
+  const emojiPlantSize = 52 + getPlantStage() * 22;
+  const getSessionTip = () => {
+    const trendTip = getTrendTipForSession({
+      currentSeason,
+      waterLevel,
+      nutrientLevel,
+      hasThreat: Boolean(activeThreat && !activeThreat.resolved),
+    });
+    if (activeThreat && !activeThreat.resolved) {
+      return activeThreat.type === "disease"
+        ? "🐛 Pest spotted: tap the crop or spray quickly before health drops."
+        : "⛈️ Storm risk: pause extra watering and protect tender stems.";
+    }
+    if (waterLevel < 25) return "💧 Dry soil: water now, then mulch to hold moisture.";
+    if (nutrientLevel < 25) return "🪱 Low nutrients: feed lightly with compost or fertilizer.";
+    if (currentSeason === "dry") return "☀️ Dry spell: check soil more often and shade seedlings.";
+    if (currentSeason === "raining") return "🌧️ Rainy spell: watch for fungus and nutrient leaching.";
+    return `${trendTip.emoji} ${trendTip.title}: ${trendTip.tip}`;
+  };
+  const realDaysElapsed = Math.min(
+    plantCycleDays,
+    Math.round(((TEN_MINUTES - timeLeft) / TEN_MINUTES) * plantCycleDays)
+  );
 
   const getCurrentSeason = (): SeasonType => {
     const elapsed = TEN_MINUTES - timeLeft;
@@ -488,11 +529,12 @@ const PlantScreen = () => {
   const handlePlantLifeCycle = () => {
     const now = Date.now();
 
-    // Decay logic — softened for the shorter (3 min) sessions so tending
-    // stays engaging rather than frantic. Applied once per second.
+    // Decay logic mirrors garden care rhythms for a longer planning session.
+    // Dry spells mainly reduce water, rain can leach nutrients, and normal
+    // weather changes slowly enough to support longer crop cycles.
     const waterDecay =
-      currentSeason === "dry" ? 4 : currentSeason === "normal" ? 2 : 0;
-    const nutrientDecay = currentSeason === "raining" ? 4 : 3;
+      currentSeason === "dry" ? 1.1 : currentSeason === "normal" ? 0.45 : 0.15;
+    const nutrientDecay = currentSeason === "raining" ? 0.75 : 0.35;
 
     setWaterLevel((prev) => Math.max(0, prev - waterDecay));
     setNutrientLevel((prev) => Math.max(0, prev - nutrientDecay));
@@ -578,7 +620,15 @@ const PlantScreen = () => {
       // setTimeout(() => {
       router.replace({
         pathname: "/(screens)/harvest",
-        params: { name, score, userLevel, plantHealth },
+        params: {
+          name,
+          score,
+          userLevel,
+          plantHealth,
+          companionNames: companionPlants.map((item) => item.name).join(","),
+          offlineGardenData: offlineGarden ? JSON.stringify(offlineGarden) : "",
+          simulationDays: realDaysElapsed,
+        },
       });
       // }, 50);
     }
@@ -918,11 +968,11 @@ const PlantScreen = () => {
   const getPlantSize = () => {
     const plantStage = getPlantStage();
 
-    if (plantStage === 0) return 150;
-    if (plantStage === 1) return 200;
-    if (plantStage === 2) return 300;
-    if (plantStage === 3) return 400;
-    return 150;
+    if (plantStage === 0) return 110;
+    if (plantStage === 1) return 145;
+    if (plantStage === 2) return 185;
+    if (plantStage === 3) return 225;
+    return 110;
   };
 
   const triggerSpray = async () => {
@@ -1188,7 +1238,7 @@ const PlantScreen = () => {
                       {t("game.nutrient")}
                     </Text>
                     <Text className="text-black text-lg font-primary">
-                      {nutrientLevel}%
+                      {Math.round(nutrientLevel)}%
                     </Text>
                   </>
                 </View>
@@ -1204,7 +1254,7 @@ const PlantScreen = () => {
                       {t("game.health")}
                     </Text>
                     <Text className="text-black text-lg font-primary">
-                      {plantHealth}%
+                      {Math.round(plantHealth)}%
                     </Text>
                   </>
                 </View>
@@ -1220,7 +1270,7 @@ const PlantScreen = () => {
                       {t("game.water")}
                     </Text>
                     <Text className="text-black text-lg font-primary">
-                      {waterLevel}%
+                      {Math.round(waterLevel)}%
                     </Text>
                   </>
                 </View>
@@ -1248,6 +1298,30 @@ const PlantScreen = () => {
             )}
             <Text className="text-yellow-600 text-lg">{showGiftMessage}</Text>
             <Text className="text-white text-3xl font-bold">{score}</Text>
+            <Text className="bg-green-900/70 text-white text-xs text-center rounded-2xl px-4 py-2 mt-2 mx-4">
+              {getSessionTip()}
+            </Text>
+            <View className="bg-black/35 rounded-2xl px-4 py-2 mt-2 mx-4">
+              <Text className="text-white text-center font-pbold">
+                {plant.emoji || "🌱"} {plant.diplayName} • {plant.gardenType}
+              </Text>
+              <Text className="text-yellow-200 text-center text-xs mt-1">
+                Real cycle: day {realDaysElapsed} of {plantCycleDays} • {currentStagePlan?.name}
+              </Text>
+              <Text className="text-white/80 text-center text-xs mt-1">
+                Spacing tip: {plant.spacing}
+              </Text>
+            </View>
+            {companionPlants.length > 0 && (
+              <View className="bg-green-950/65 rounded-2xl px-3 py-2 mt-2 mx-4">
+                <Text className="text-white text-xs text-center font-pbold">
+                  Companion bed: {companionPlants.map((item) => `${item.emoji || "🌱"} ${item.name}`).join("  •  ")}
+                </Text>
+                <Text className="text-yellow-100 text-[10px] text-center mt-1">
+                  All selected plants share this session's water, nutrient, health and stage KPIs for comparison.
+                </Text>
+              </View>
+            )}
           </View>
 
           {spraying && (
@@ -1255,11 +1329,11 @@ const PlantScreen = () => {
               style={{
                 position: "absolute",
                 top: SCREEN_HEIGHT / 2 - 5,
-                left: SCREEN_WIDTH / 2 - 80,
-                width: 160,
-                height: 160,
+                left: SCREEN_WIDTH / 2 - 58,
+                width: 116,
+                height: 116,
                 backgroundColor: "rgba(200,255,200,0.3)",
-                borderRadius: 80,
+                borderRadius: 58,
                 transform: [
                   {
                     scale: sprayAnim.interpolate({
@@ -1280,10 +1354,10 @@ const PlantScreen = () => {
             <Animated.View
               style={{
                 position: "absolute",
-                top: SCREEN_HEIGHT / 2,
-                left: SCREEN_WIDTH / 2 - 30,
-                width: 60,
-                height: 100,
+                top: SCREEN_HEIGHT / 2 - 20,
+                left: SCREEN_WIDTH / 2 - 22,
+                width: 44,
+                height: 72,
                 opacity: waterAnim.interpolate({
                   inputRange: [0, 1],
                   outputRange: [1, 0],
@@ -1306,12 +1380,12 @@ const PlantScreen = () => {
             <Animated.View
               style={{
                 position: "absolute",
-                top: SCREEN_HEIGHT / 2 - 80,
-                left: SCREEN_WIDTH / 2 - 80,
-                width: 160,
-                height: 160,
+                top: SCREEN_HEIGHT / 2 - 58,
+                left: SCREEN_WIDTH / 2 - 58,
+                width: 116,
+                height: 116,
                 backgroundColor: "rgba(100,200,100,0.3)",
-                borderRadius: 80,
+                borderRadius: 58,
                 opacity: fertAnim.interpolate({
                   inputRange: [0, 1],
                   outputRange: [0.8, 0],
@@ -1330,7 +1404,7 @@ const PlantScreen = () => {
 
           {/* Plant */}
           <View
-            className={`flex-1 justify-center items-center mt-80`}
+            className={`flex-1 justify-center items-center mt-56`}
             style={{
               borderRadius: 100,
               padding: 2,
@@ -1341,9 +1415,9 @@ const PlantScreen = () => {
               <Animated.Image
                 source={images.soil}
                 style={{
-                  width: 100,
-                  height: 130,
-                  bottom: 80,
+                  width: 76,
+                  height: 92,
+                  bottom: 52,
                   position: "absolute",
                 }}
                 resizeMode="contain"
@@ -1354,37 +1428,80 @@ const PlantScreen = () => {
               <ExpoImage
                 source={images.bugs}
                 style={{
-                  width: 30,
-                  height: 30,
+                  width: 24,
+                  height: 24,
                   position: "absolute", // <-- This removes it from layout flow
-                  top: 120, // Adjust as needed
-                  left: 170, // Adjust as needed
+                  top: 92, // Adjust as needed
+                  left: 138, // Adjust as needed
                   zIndex: 10, // Make sure it's above the plant
                 }}
               />
             )}
-            {isTimerActive && !soilVisible && (
-              <Animated.Image
-                source={
-                  plantDamaged
-                    ? plantSickImages[getPlantStage()]
-                    : currentSeason === "raining"
-                    ? plantRainImages[getPlantStage()]
-                    : plantImages[getPlantStage()]
-                }
-                className={`w-48 `}
-                resizeMode="contain"
-                style={{
-                  height: getPlantSize(),
-                  // transform: [{ scale: plantScale }],
-                }}
-              />
+            {isTimerActive && !soilVisible &&
+              (plantImages?.length ? (
+                <Animated.Image
+                  source={
+                    plantDamaged
+                      ? plantSickImages[getPlantStage()]
+                      : currentSeason === "raining"
+                      ? plantRainImages[getPlantStage()]
+                      : plantImages[getPlantStage()]
+                  }
+                  className={`w-48 `}
+                  resizeMode="contain"
+                  style={{
+                    height: getPlantSize(),
+                  }}
+                />
+              ) : (
+                <View className="items-center justify-end">
+                  <Animated.Text
+                    style={{
+                      fontSize: emojiPlantSize,
+                      transform: [{ scale: plantScale }],
+                      textShadowColor: plantDamaged ? "#D22" : "#174A22",
+                      textShadowRadius: plantDamaged ? 8 : 2,
+                      marginBottom: -8,
+                    }}
+                  >
+                    {plant.emoji || "🌱"}
+                  </Animated.Text>
+                  <View
+                    style={{
+                      width: emojiPlantSize * 0.95,
+                      height: Math.max(12, emojiPlantSize * 0.18),
+                      borderRadius: 999,
+                      backgroundColor: "#5B3A1E",
+                      borderWidth: 2,
+                      borderColor: "#8B5A2B",
+                    }}
+                  />
+                </View>
+              ))}
+            {companionPlants.length > 0 && (
+              <View className="flex-row items-end gap-x-3 mt-2">
+                {companionPlants.map((item, index) => (
+                  <View key={`${item.name}-${index}`} className="items-center">
+                    <Text style={{ fontSize: Math.max(30, emojiPlantSize * 0.55) }}>
+                      {item.emoji || "🌱"}
+                    </Text>
+                    <View
+                      style={{
+                        width: Math.max(28, emojiPlantSize * 0.5),
+                        height: 8,
+                        borderRadius: 999,
+                        backgroundColor: "#5B3A1E",
+                      }}
+                    />
+                  </View>
+                ))}
+              </View>
             )}
           </View>
 
           {/* Tool buttons */}
 
-          <View className="absolute left-4 top-[18%] gap-y-1 py-80">
+          <View className="absolute left-3 top-[43%] gap-y-2">
             <ToolIcon
               icon={images.fertilizer}
               onPress={throttledTriggerFertilizer}
@@ -1415,7 +1532,7 @@ const PlantScreen = () => {
               />
             </View>
             <Text className="text-center text-white mt-1">
-              {getPlantStage() * 25}
+              {Math.min(100, Math.round(((TEN_MINUTES - timeLeft) / TEN_MINUTES) * 100))}% • {currentStagePlan?.days || 0} real days in this stage
             </Text>
           </View>
 
@@ -1604,11 +1721,11 @@ const ToolIcon = ({
   <TouchableOpacity
     onPress={onPress}
     disabled={disabled}
-    className="relative w-26 h-26 rounded-full bg-cream border-4 border-[#e6d6aa] flex items-center justify-center shadow-md"
+    className="relative w-14 h-14 rounded-full bg-cream border-2 border-[#e6d6aa] flex items-center justify-center shadow-md"
   >
-    <Image source={icon} className="w-20 h-20" resizeMode="contain" />
+    <Image source={icon} className="w-10 h-10" resizeMode="contain" />
 
-    <Text className="absolute bottom-2 right-2 bg-[#9D863B] text-white text-sm font-bold w-8 h-6 rounded-full flex text-center items-center justify-center shadow">
+    <Text className="absolute -bottom-1 -right-1 bg-[#9D863B] text-white text-[10px] font-bold w-6 h-5 rounded-full flex text-center items-center justify-center shadow">
       {itemQty}
     </Text>
   </TouchableOpacity>
@@ -1624,7 +1741,7 @@ const ActionButton = ({
   onPress: () => void;
 }) => (
   <TouchableOpacity className="items-center" onPress={onPress}>
-    <Image source={icon} className="w-24 h-24" resizeMode="contain" />
+    <Image source={icon} className="w-14 h-14" resizeMode="contain" />
     {label !== "" && (
       <Text className="text-white text-xs font-bold mt-1">{label}</Text>
     )}

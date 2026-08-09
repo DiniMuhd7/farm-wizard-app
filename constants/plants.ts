@@ -2,7 +2,8 @@ import { useTranslation } from "react-i18next";
 import images from "./images";
 import plantImages from "./plantImages";
 
-// This function returns the translated `plantGrowth` data
+// U.S. grocery-garden reference cycles. The game compresses real days into
+// a playable care session while preserving real-life stage names and durations.
 export const usePlantGrowth = () => {
   const { t } = useTranslation();
 
@@ -33,6 +34,17 @@ export const usePlantGrowth = () => {
       ],
       levels: 2,
       progress: 0.2,
+      emoji: "🍎",
+      cycleDays: 1825,
+      gardenType: "Backyard orchard",
+      spacing: "Dwarf trees: 8–10 ft apart",
+      stages: [
+        { name: "Dormant bare-root tree", days: 30 },
+        { name: "Leaf and branch establishment", days: 365 },
+        { name: "Blossom and pollination seasons", days: 730 },
+        { name: "First reliable fruiting window", days: 700 },
+      ],
+      nutrition: { strength: "Fiber + polyphenols", impact: "Supports heart-friendly snacking and digestive health." },
     },
     {
       id: 2,
@@ -60,6 +72,17 @@ export const usePlantGrowth = () => {
       ],
       levels: 4,
       progress: 0.65,
+      emoji: "🌽",
+      cycleDays: 84,
+      gardenType: "Warm-season grocery bed",
+      spacing: "Rows 30–36 in apart; plants 8–12 in apart",
+      stages: [
+        { name: "Direct sow after frost", days: 10 },
+        { name: "Vegetative leaf growth", days: 35 },
+        { name: "Tassel and silk pollination", days: 20 },
+        { name: "Milk stage harvest", days: 19 },
+      ],
+      nutrition: { strength: "Carbohydrates + fiber", impact: "Provides garden-fresh energy and supports meal satiety." },
     },
     {
       id: 3,
@@ -87,6 +110,17 @@ export const usePlantGrowth = () => {
       ],
       levels: 3,
       progress: 0.5,
+      emoji: "🥭",
+      cycleDays: 1460,
+      gardenType: "Frost-free patio/orchard fruit",
+      spacing: "Container or 12–15 ft in warm zones",
+      stages: [
+        { name: "Transplant and root establishment", days: 90 },
+        { name: "Canopy building", days: 545 },
+        { name: "Flowering and fruit set", days: 365 },
+        { name: "Mature fruit harvest", days: 460 },
+      ],
+      nutrition: { strength: "Vitamin C + carotenoids", impact: "Contributes antioxidant support and immune-friendly fruit servings." },
     },
     {
       id: 4,
@@ -114,6 +148,17 @@ export const usePlantGrowth = () => {
       ],
       levels: 1,
       progress: 0.1,
+      emoji: "🍊",
+      cycleDays: 1095,
+      gardenType: "Citrus patio/orchard fruit",
+      spacing: "Container or 10–15 ft in warm zones",
+      stages: [
+        { name: "Young tree establishment", days: 120 },
+        { name: "Flush growth and pruning", days: 365 },
+        { name: "Bloom and fruit set", days: 245 },
+        { name: "Color break and harvest", days: 365 },
+      ],
+      nutrition: { strength: "Vitamin C + hydration", impact: "Supports immune health and refreshing household fruit intake." },
     },
     {
       id: 5,
@@ -141,6 +186,87 @@ export const usePlantGrowth = () => {
       ],
       levels: 4,
       progress: 0.9,
+      emoji: "🧡",
+      cycleDays: 330,
+      gardenType: "Warm-zone fruiting perennial",
+      spacing: "7–10 ft apart or large container",
+      stages: [
+        { name: "Transplant and rooting", days: 30 },
+        { name: "Leaf canopy growth", days: 120 },
+        { name: "Flowering and fruit set", days: 90 },
+        { name: "Ripening harvest window", days: 90 },
+      ],
+      nutrition: { strength: "Vitamin C + beta-carotene", impact: "Adds antioxidant fruit value and colorful micronutrients." },
+    },
+
+    {
+      id: 6,
+      name: "Tomato",
+      diplayName: "Tomato",
+      icon: null,
+      iconLg: null,
+      plantImages: [],
+      plantSickImages: [],
+      plantRainImages: [],
+      levels: 1,
+      progress: 0.25,
+      emoji: "🍅",
+      cycleDays: 75,
+      gardenType: "Summer raised-bed crop",
+      spacing: "18–24 in apart with cage or trellis",
+      stages: [
+        { name: "Indoor seedling or transplant", days: 21 },
+        { name: "Leaf and root establishment", days: 21 },
+        { name: "Flowering and fruit set", days: 18 },
+        { name: "Ripening harvest window", days: 15 },
+      ],
+      nutrition: { strength: "Vitamin C + potassium", impact: "Supports fresh salsa meals, hydration, and heart-friendly potassium intake." },
+    },
+    {
+      id: 7,
+      name: "Lettuce",
+      diplayName: "Lettuce",
+      icon: null,
+      iconLg: null,
+      plantImages: [],
+      plantSickImages: [],
+      plantRainImages: [],
+      levels: 1,
+      progress: 0.35,
+      emoji: "🥬",
+      cycleDays: 45,
+      gardenType: "Cool-season salad bed",
+      spacing: "Leaf lettuce 4–6 in apart; heads 10–12 in apart",
+      stages: [
+        { name: "Direct sow or transplant", days: 7 },
+        { name: "Tender leaf growth", days: 14 },
+        { name: "Head/leaf fill", days: 14 },
+        { name: "Cut-and-come harvest", days: 10 },
+      ],
+      nutrition: { strength: "Vitamin K + folate", impact: "Adds leafy greens that support balanced meals and micronutrient variety." },
+    },
+    {
+      id: 8,
+      name: "Strawberry",
+      diplayName: "Strawberry",
+      icon: null,
+      iconLg: null,
+      plantImages: [],
+      plantSickImages: [],
+      plantRainImages: [],
+      levels: 1,
+      progress: 0.45,
+      emoji: "🍓",
+      cycleDays: 365,
+      gardenType: "Perennial berry patch",
+      spacing: "12–18 in apart with straw mulch",
+      stages: [
+        { name: "Crown planting", days: 30 },
+        { name: "Runner and leaf growth", days: 120 },
+        { name: "Flower and green berry", days: 90 },
+        { name: "Red berry harvest", days: 125 },
+      ],
+      nutrition: { strength: "Vitamin C + manganese", impact: "Adds antioxidant-rich berries for snacks, smoothies, and family desserts." },
     },
   ];
 };
@@ -152,22 +278,22 @@ export const usePlantGrowthMessages = () => {
   return [
     {
       stage: 0,
-      message: t("plants.stage0"),
+      message: "Plan the bed, prepare compost, and start seed/root establishment.",
       image: images.growth1,
     },
     {
       stage: 1,
-      message: t("plants.stage1"),
+      message: "Vegetative growth: keep moisture steady, weed, mulch, and feed lightly.",
       image: images.growth2,
     },
     {
       stage: 2,
-      message: t("plants.stage2"),
+      message: "Flowering/pollination: protect from stress and monitor pests.",
       image: images.growth3,
     },
     {
       stage: 3,
-      message: t("plants.stage3"),
+      message: "Ripening/harvest window: check produce often and record your results.",
       image: images.growth4,
     },
   ];

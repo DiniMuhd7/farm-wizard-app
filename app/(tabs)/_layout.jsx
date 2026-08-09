@@ -71,6 +71,12 @@ const TabsLayout = () => {
         tabBar={(props) => <CustomBottomTab {...props} />}
       >
         <Tabs.Screen
+          name="farmPerformance"
+          options={{
+            headerShown: false,
+          }}
+        />
+        <Tabs.Screen
           name="(sub-tabs)/settings"
           options={{
             tabBarButton: () => null,

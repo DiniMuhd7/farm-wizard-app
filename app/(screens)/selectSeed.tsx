@@ -9,6 +9,8 @@ import {
   Image,
   Animated,
   Dimensions,
+  TextInput,
+  Switch,
 } from "react-native";
 import { CustomButton } from "../../components";
 import { useRouter } from "expo-router";
@@ -32,10 +34,27 @@ const SelectSeed = () => {
   const isPremiumUser = user?.isPremium === true;
 
   const [selectedIndex, setSelectedIndex] = useState(1); // Default: Maize
+  const [selectedIndexes, setSelectedIndexes] = useState<number[]>([1]);
+  const [includeOffline, setIncludeOffline] = useState(false);
+  const [offlineForm, setOfflineForm] = useState({
+    plantName: "",
+    health: "80",
+    growthStage: "1",
+    daysGrowing: "14",
+  });
   const fadeAnim = useRef(new Animated.Value(1)).current;
 
   const plantSeeds = seeds();
   const selectedSeed = plantSeeds[selectedIndex];
+
+  const toggleSeedSelection = (index: number) => {
+    setSelectedIndexes((current) => {
+      if (current.includes(index)) {
+        return current.length === 1 ? current : current.filter((item) => item !== index);
+      }
+      return [...current, index].slice(0, 4);
+    });
+  };
 
   const handleSeedChange = (index: number) => {
     // Animate fade-out → change → fade-in
@@ -52,6 +71,7 @@ const SelectSeed = () => {
       }),
     ]).start(() => {
       setSelectedIndex(index);
+      toggleSeedSelection(index);
     });
   };
 
@@ -125,17 +145,20 @@ const SelectSeed = () => {
                 borderRadius: 12,
                 borderWidth: 2,
                 borderColor:
-                  selectedIndex === index ? "#FCD34D" : "transparent",
+                  selectedIndexes.includes(index) ? "#FCD34D" : "transparent",
                 backgroundColor:
-                  selectedIndex === index ? "white" : "rgba(255,255,255,0.4)",
+                  selectedIndexes.includes(index) ? "white" : "rgba(255,255,255,0.4)",
               }}
             >
-              <Image
-                source={seed.icon}
-                // className="w-8 h-8"
-                resizeMode="contain"
-                style={{ width: width * 0.14, height: width * 0.14 }}
-              />
+              {seed.icon ? (
+                <Image
+                  source={seed.icon}
+                  resizeMode="contain"
+                  style={{ width: width * 0.14, height: width * 0.14 }}
+                />
+              ) : (
+                <Text style={{ fontSize: width * 0.09 }}>{seed.emoji || "🌱"}</Text>
+              )}
             </TouchableOpacity>
           ))}
         </ScrollView>
@@ -201,16 +224,21 @@ const SelectSeed = () => {
                 </Text>
               </View>
             )}
-            <Image
-              source={selectedSeed.iconLg}
-              // className="w-40 h-40 mb-6"
-              style={{
-                width: width * 0.5,
-                height: width * 0.5,
-                marginBottom: 10,
-              }}
-              resizeMode="contain"
-            />
+            {selectedSeed.iconLg ? (
+              <Image
+                source={selectedSeed.iconLg}
+                style={{
+                  width: width * 0.5,
+                  height: width * 0.5,
+                  marginBottom: 10,
+                }}
+                resizeMode="contain"
+              />
+            ) : (
+              <Text style={{ fontSize: width * 0.32, marginBottom: 10 }}>
+                {selectedSeed.emoji || "🌱"}
+              </Text>
+            )}
             <Text
               //className="text-[#7B6C32] text-center px-2 mb-6"
               style={{
@@ -219,7 +247,7 @@ const SelectSeed = () => {
                 paddingHorizontal: 10,
               }}
             >
-              {t("messages.seed_info")}
+              {selectedSeed.gardenType} • {selectedSeed.spacing}
             </Text>
           </View>
 
@@ -234,6 +262,54 @@ const SelectSeed = () => {
             />
           ))}
         </View> */}
+
+          <Text style={{ color: "#fff", textAlign: "center", marginTop: 4 }}>
+            Selected garden bed: {selectedIndexes.map((i) => plantSeeds[i]?.emoji || "🌱").join(" ")}
+          </Text>
+
+          <View style={{ width: "100%", backgroundColor: "rgba(0,0,0,0.22)", borderRadius: 16, padding: 12, marginTop: 10 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Text style={{ color: "white", fontWeight: "700", flex: 1 }}>Compare with my offline garden</Text>
+              <Switch value={includeOffline} onValueChange={setIncludeOffline} />
+            </View>
+            {includeOffline && (
+              <View style={{ gap: 8, marginTop: 10 }}>
+                <TextInput
+                  placeholder="Offline plant name"
+                  placeholderTextColor="#FDEFC0"
+                  value={offlineForm.plantName}
+                  onChangeText={(plantName) => setOfflineForm({ ...offlineForm, plantName })}
+                  style={{ color: "white", borderBottomColor: "#FCD34D", borderBottomWidth: 1, paddingVertical: 4 }}
+                />
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  <TextInput
+                    keyboardType="number-pad"
+                    placeholder="Health %"
+                    placeholderTextColor="#FDEFC0"
+                    value={offlineForm.health}
+                    onChangeText={(health) => setOfflineForm({ ...offlineForm, health })}
+                    style={{ color: "white", flex: 1, borderBottomColor: "#FCD34D", borderBottomWidth: 1, paddingVertical: 4 }}
+                  />
+                  <TextInput
+                    keyboardType="number-pad"
+                    placeholder="Stage 0-3"
+                    placeholderTextColor="#FDEFC0"
+                    value={offlineForm.growthStage}
+                    onChangeText={(growthStage) => setOfflineForm({ ...offlineForm, growthStage })}
+                    style={{ color: "white", flex: 1, borderBottomColor: "#FCD34D", borderBottomWidth: 1, paddingVertical: 4 }}
+                  />
+                  <TextInput
+                    keyboardType="number-pad"
+                    placeholder="Days"
+                    placeholderTextColor="#FDEFC0"
+                    value={offlineForm.daysGrowing}
+                    onChangeText={(daysGrowing) => setOfflineForm({ ...offlineForm, daysGrowing })}
+                    style={{ color: "white", flex: 1, borderBottomColor: "#FCD34D", borderBottomWidth: 1, paddingVertical: 4 }}
+                  />
+                </View>
+              </View>
+            )}
+          </View>
 
           {/* Planting Progress Bar */}
           {/* <View className="w-full h-3 bg-white/30 rounded-full mb-4 overflow-hidden">
@@ -261,9 +337,21 @@ const SelectSeed = () => {
         <CustomButton
           title={t("buttons.select_seed")}
           handlePress={() => {
+            const selectedPlants = selectedIndexes.map((i) => plantSeeds[i]?.name).filter(Boolean);
             router.push({
               pathname: "/(screens)/sessionStarted",
-              params: { name: selectedSeed.name },
+              params: {
+                name: selectedSeed.name,
+                names: selectedPlants.join(","),
+                offlineGardenData: includeOffline
+                  ? JSON.stringify({
+                      plantName: offlineForm.plantName || selectedSeed.name,
+                      health: Number(offlineForm.health) || 0,
+                      growthStage: Number(offlineForm.growthStage) || 0,
+                      daysGrowing: Number(offlineForm.daysGrowing) || 0,
+                    })
+                  : "",
+              },
             });
             playSound(require("@/assets/sounds/click.mp3"), 0.05);
           }}

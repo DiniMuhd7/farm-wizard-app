@@ -1,22 +1,21 @@
 import React from "react";
-import { View, Pressable, Image } from "react-native";
-import { icons, images } from "@/constants";
-import Svg, { Path } from "react-native-svg";
+import { View, Pressable, Text } from "react-native";
 import { router } from "expo-router";
 import { playSound } from "@/utils/audio";
 
-export function WavyBackground() {
-  return (
-    <View className="absolute bottom-0 w-full h-24">
-      <Svg height="100%" width="100%" viewBox="0 0 1440 320">
-        <Path
-          fill="#2C6C3B"
-          d="M0,96 C240,160 480,0 720,96 C960,192 1200,96 1440,128 L1440,320 L0,320 Z"
-        />
-      </Svg>
-    </View>
-  );
-}
+type TabItem = {
+  label: string;
+  emoji: string;
+  path: string;
+  accent: string;
+};
+
+const tabs: TabItem[] = [
+  { label: "Farm", emoji: "🏡", path: "/(tabs)/home", accent: "#75D67A" },
+  { label: "Grow", emoji: "🌱", path: "/(screens)/selectSeed", accent: "#F9D65C" },
+  { label: "Stats", emoji: "📊", path: "/(tabs)/farmPerformance", accent: "#7DD3FC" },
+  { label: "Rank", emoji: "🏆", path: "/(tabs)/leaderboard", accent: "#FBBF24" },
+];
 
 const tap = (path: string) => {
   router.push(path as any);
@@ -25,45 +24,38 @@ const tap = (path: string) => {
 
 export default function CustomBottomTab() {
   return (
-    <View className="absolute -bottom-2 w-full">
-      {/* <WavyBackground /> */}
-      <Image source={images.bgTabs} className="absolute bottom-2 w-full h-16" />
-      <View className="absolute bottom-2 w-full h-24 flex-row justify-between items-end px-8 pt-6">
-        {/* Left Tab */}
-        <Pressable
-          className="w-16 h-16 rounded-full bg-[#d1a635] items-center justify-center border-2 border-white"
-          onPress={() => tap("/(tabs)/profile")}
-        >
-          <Image
-            source={icons.claim}
-            className="w-12 h-12"
-            style={{ tintColor: "#fff" }}
-          />
-        </Pressable>
-
-        {/* Center Tab */}
-        <Pressable
-          className="w-20 h-20 rounded-full bg-[#d1a635] items-center justify-center border-4 border-white mb-2 shadow-lg shadow-black"
-          onPress={() => tap("/(tabs)/home")}
-        >
-          <Image
-            source={icons.home}
-            className="w-10 h-10"
-            style={{ tintColor: "#fff" }}
-          />
-        </Pressable>
-
-        {/* Right Tab */}
-        <Pressable
-          className="w-16 h-16 rounded-full bg-[#d1a635] items-center justify-center border-2 border-white"
-          onPress={() => tap("/(tabs)/leaderboard")}
-        >
-          <Image
-            source={icons.stats}
-            className="w-8 h-8"
-            style={{ tintColor: "#fff" }}
-          />
-        </Pressable>
+    <View className="absolute bottom-3 left-4 right-4">
+      <View className="bg-[#16351F]/95 border border-[#F7E7A1]/40 rounded-[32px] px-3 py-2 flex-row justify-between shadow-lg shadow-black">
+        {tabs.map((tab, index) => {
+          const featured = tab.label === "Grow";
+          return (
+            <Pressable
+              key={tab.path}
+              onPress={() => tap(tab.path)}
+              className={`items-center justify-center rounded-3xl ${featured ? "-mt-7" : ""}`}
+              style={{ minWidth: featured ? 74 : 62 }}
+            >
+              <View
+                className={`${featured ? "w-16 h-16" : "w-12 h-12"} rounded-full items-center justify-center border-2`}
+                style={{
+                  backgroundColor: featured ? "#2F7D3D" : "rgba(255,255,255,0.10)",
+                  borderColor: tab.accent,
+                }}
+              >
+                <Text style={{ fontSize: featured ? 30 : 24 }}>{tab.emoji}</Text>
+              </View>
+              <Text
+                className="text-white text-[11px] font-pbold mt-1"
+                style={{ color: featured ? "#F9D65C" : "#FFFFFF" }}
+              >
+                {tab.label}
+              </Text>
+              {index === 1 && (
+                <View className="w-8 h-1 rounded-full mt-1 bg-[#F9D65C]" />
+              )}
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );

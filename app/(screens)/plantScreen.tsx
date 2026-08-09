@@ -288,6 +288,19 @@ const PlantScreen = () => {
   const plantStagePlan = plant?.stages || [];
   const plantCycleDays = plant?.cycleDays || 0;
   const currentStagePlan = plantStagePlan[getPlantStage()] || plantStagePlan[0];
+  const emojiPlantSize = 96 + getPlantStage() * 44;
+  const getSessionTip = () => {
+    if (activeThreat && !activeThreat.resolved) {
+      return activeThreat.type === "disease"
+        ? "🐛 Pest spotted: tap the crop or spray quickly before health drops."
+        : "⛈️ Storm risk: pause extra watering and protect tender stems.";
+    }
+    if (waterLevel < 25) return "💧 Dry soil: water now, then mulch to hold moisture.";
+    if (nutrientLevel < 25) return "🪱 Low nutrients: feed lightly with compost or fertilizer.";
+    if (currentSeason === "dry") return "☀️ Dry spell: check soil more often and shade seedlings.";
+    if (currentSeason === "raining") return "🌧️ Rainy spell: watch for fungus and nutrient leaching.";
+    return `🌿 ${currentStagePlan?.name || "Growth"}: ${growthCycle.message}`;
+  };
   const realDaysElapsed = Math.min(
     plantCycleDays,
     Math.round(((TEN_MINUTES - timeLeft) / TEN_MINUTES) * plantCycleDays)
@@ -1256,6 +1269,9 @@ const PlantScreen = () => {
             )}
             <Text className="text-yellow-600 text-lg">{showGiftMessage}</Text>
             <Text className="text-white text-3xl font-bold">{score}</Text>
+            <Text className="bg-green-900/70 text-white text-xs text-center rounded-2xl px-4 py-2 mt-2 mx-4">
+              {getSessionTip()}
+            </Text>
             <View className="bg-black/35 rounded-2xl px-4 py-2 mt-2 mx-4">
               <Text className="text-white text-center font-pbold">
                 {plant.emoji || "🌱"} {plant.diplayName} • {plant.gardenType}
@@ -1382,23 +1398,34 @@ const PlantScreen = () => {
                 }}
               />
             )}
-            {isTimerActive && !soilVisible && (
-              <Animated.Image
-                source={
-                  plantDamaged
-                    ? plantSickImages[getPlantStage()]
-                    : currentSeason === "raining"
-                    ? plantRainImages[getPlantStage()]
-                    : plantImages[getPlantStage()]
-                }
-                className={`w-48 `}
-                resizeMode="contain"
-                style={{
-                  height: getPlantSize(),
-                  // transform: [{ scale: plantScale }],
-                }}
-              />
-            )}
+            {isTimerActive && !soilVisible &&
+              (plantImages?.length ? (
+                <Animated.Image
+                  source={
+                    plantDamaged
+                      ? plantSickImages[getPlantStage()]
+                      : currentSeason === "raining"
+                      ? plantRainImages[getPlantStage()]
+                      : plantImages[getPlantStage()]
+                  }
+                  className={`w-48 `}
+                  resizeMode="contain"
+                  style={{
+                    height: getPlantSize(),
+                  }}
+                />
+              ) : (
+                <Animated.Text
+                  style={{
+                    fontSize: emojiPlantSize,
+                    transform: [{ scale: plantScale }],
+                    textShadowColor: plantDamaged ? "#D22" : "#174A22",
+                    textShadowRadius: plantDamaged ? 10 : 3,
+                  }}
+                >
+                  {plant.emoji || "🌱"}
+                </Animated.Text>
+              ))}
           </View>
 
           {/* Tool buttons */}

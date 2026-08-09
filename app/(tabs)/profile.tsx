@@ -290,6 +290,12 @@ const Profile = () => {
         <Text className="text-white/90 text-center text-xs mt-1">
           Use this dashboard to compare crop health, real-life cycle length, and harvest timing before planting your next grocery bed.
         </Text>
+        <TouchableOpacity
+          className="bg-[#E0C145B8] rounded-full px-4 py-2 mt-3"
+          onPress={() => router.push("/(tabs)/farmPerformance")}
+        >
+          <Text className="text-white text-center font-pbold">Open full performance report 📊</Text>
+        </TouchableOpacity>
       </View>
 
     </View>

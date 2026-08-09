@@ -12,7 +12,6 @@ import fewCoinsMessage from "../assets/images/few-coins-message.png";
 import premimUser from "../assets/images/premium-user.png";
 import nonPremimuUser from "../assets/images/non-premium-user.png";
 import adsBadge from "../assets/images/ads-badge.png";
-import bgTabs from "../assets/images/bg-tabs.png";
 import upgrade from "../assets/images/upgrade.png";
 import confirmLogout from "../assets/images/confirm-logout.png";
 import noNetwork from "../assets/images/no-network.png";
@@ -126,7 +125,6 @@ export default {
   premimUser,
   nonPremimuUser,
   adsBadge,
-  bgTabs,
 
   leaderboard,
   leaderboard1,

@@ -2,7 +2,8 @@ import { useTranslation } from "react-i18next";
 import images from "./images";
 import plantImages from "./plantImages";
 
-// This function returns the translated `plantGrowth` data
+// U.S. grocery-garden reference cycles. The game compresses real days into
+// a playable care session while preserving real-life stage names and durations.
 export const usePlantGrowth = () => {
   const { t } = useTranslation();
 
@@ -33,6 +34,16 @@ export const usePlantGrowth = () => {
       ],
       levels: 2,
       progress: 0.2,
+      emoji: "🍎",
+      cycleDays: 1825,
+      gardenType: "Backyard orchard",
+      spacing: "Dwarf trees: 8–10 ft apart",
+      stages: [
+        { name: "Dormant bare-root tree", days: 30 },
+        { name: "Leaf and branch establishment", days: 365 },
+        { name: "Blossom and pollination seasons", days: 730 },
+        { name: "First reliable fruiting window", days: 700 },
+      ],
     },
     {
       id: 2,
@@ -60,6 +71,16 @@ export const usePlantGrowth = () => {
       ],
       levels: 4,
       progress: 0.65,
+      emoji: "🌽",
+      cycleDays: 84,
+      gardenType: "Warm-season grocery bed",
+      spacing: "Rows 30–36 in apart; plants 8–12 in apart",
+      stages: [
+        { name: "Direct sow after frost", days: 10 },
+        { name: "Vegetative leaf growth", days: 35 },
+        { name: "Tassel and silk pollination", days: 20 },
+        { name: "Milk stage harvest", days: 19 },
+      ],
     },
     {
       id: 3,
@@ -87,6 +108,16 @@ export const usePlantGrowth = () => {
       ],
       levels: 3,
       progress: 0.5,
+      emoji: "🥭",
+      cycleDays: 1460,
+      gardenType: "Frost-free patio/orchard fruit",
+      spacing: "Container or 12–15 ft in warm zones",
+      stages: [
+        { name: "Transplant and root establishment", days: 90 },
+        { name: "Canopy building", days: 545 },
+        { name: "Flowering and fruit set", days: 365 },
+        { name: "Mature fruit harvest", days: 460 },
+      ],
     },
     {
       id: 4,
@@ -114,6 +145,16 @@ export const usePlantGrowth = () => {
       ],
       levels: 1,
       progress: 0.1,
+      emoji: "🍊",
+      cycleDays: 1095,
+      gardenType: "Citrus patio/orchard fruit",
+      spacing: "Container or 10–15 ft in warm zones",
+      stages: [
+        { name: "Young tree establishment", days: 120 },
+        { name: "Flush growth and pruning", days: 365 },
+        { name: "Bloom and fruit set", days: 245 },
+        { name: "Color break and harvest", days: 365 },
+      ],
     },
     {
       id: 5,
@@ -141,6 +182,16 @@ export const usePlantGrowth = () => {
       ],
       levels: 4,
       progress: 0.9,
+      emoji: "🧡",
+      cycleDays: 330,
+      gardenType: "Warm-zone fruiting perennial",
+      spacing: "7–10 ft apart or large container",
+      stages: [
+        { name: "Transplant and rooting", days: 30 },
+        { name: "Leaf canopy growth", days: 120 },
+        { name: "Flowering and fruit set", days: 90 },
+        { name: "Ripening harvest window", days: 90 },
+      ],
     },
   ];
 };
@@ -152,22 +203,22 @@ export const usePlantGrowthMessages = () => {
   return [
     {
       stage: 0,
-      message: t("plants.stage0"),
+      message: "Plan the bed, prepare compost, and start seed/root establishment.",
       image: images.growth1,
     },
     {
       stage: 1,
-      message: t("plants.stage1"),
+      message: "Vegetative growth: keep moisture steady, weed, mulch, and feed lightly.",
       image: images.growth2,
     },
     {
       stage: 2,
-      message: t("plants.stage2"),
+      message: "Flowering/pollination: protect from stress and monitor pests.",
       image: images.growth3,
     },
     {
       stage: 3,
-      message: t("plants.stage3"),
+      message: "Ripening/harvest window: check produce often and record your results.",
       image: images.growth4,
     },
   ];

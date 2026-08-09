@@ -25,6 +25,7 @@ import { Dimensions } from "react-native";
 import { playSound } from "@/utils/audio";
 import { API_BASE } from "@/config/client";
 import analytics from "@react-native-firebase/analytics";
+import { getFarmCycleRecords, summarizeFarmCycleRecords, FarmCycleRecord } from "@/utils/farmDashboard";
 
 const { width } = Dimensions.get("window");
 
@@ -47,9 +48,7 @@ const datasets = {
   },
 };
 
-const maxValue = 1200; // Global max value for consistent height scaling
-const yAxisLabels = Array.from({ length: 7 }, (_, i) => i * 200).reverse();
-const xAxisLabels = [1, 7, 14, 21, 28, 5, 13];
+const yAxisLabels = [100, 80, 60, 40, 20, 0];
 
 const Profile = () => {
   const { user, setUser } = useLoginContext();
@@ -79,6 +78,7 @@ const Profile = () => {
     labels: [],
   });
   const [loading, setLoading] = useState(false);
+  const [farmRecords, setFarmRecords] = useState<FarmCycleRecord[]>([]);
 
   useEffect(() => {
     const logEvent = async () => {
@@ -89,27 +89,19 @@ const Profile = () => {
     };
     logEvent();
     const fetchData = async () => {
-      const token = await AsyncStorage.getItem("token");
-      if (token !== null) {
-        setLoading(true);
-        try {
-          const res = await fetch(
-            `${API_BASE}/api/v1/earning/usd-chart/${activeTab}`,
-            {
-              method: "GET",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `JWT ${token}`,
-              },
-            }
-          );
-          const json = await res.json();
-          setChartData(json);
-        } catch (err) {
-          console.error("Chart fetch error:", err);
-        } finally {
-          setLoading(false);
-        }
+      setLoading(true);
+      try {
+        const records = await getFarmCycleRecords();
+        setFarmRecords(records);
+        const recent = records.slice(0, 7).reverse();
+        setChartData({
+          data: recent.map((item) => item.plantHealth),
+          labels: recent.map((item) => item.emoji),
+        });
+      } catch (err) {
+        console.error("Farm dashboard fetch error:", err);
+      } finally {
+        setLoading(false);
       }
     };
 
@@ -117,6 +109,7 @@ const Profile = () => {
   }, [activeTab]);
 
   const { t } = useTranslation();
+  const farmSummary = summarizeFarmCycleRecords(farmRecords);
 
   return (
     <View className="flex-1 bg-green-200 items-center">
@@ -198,10 +191,25 @@ const Profile = () => {
         )}
       </View>
       <Text className="text-yellow-300 font-secondary font-bold my-2">
-        WZP: {Number(user?.score).toFixed(2) || 0}
+        Garden Points: {Number(user?.score).toFixed(2) || 0}
         {/* || USD:{" "}
         {Number(user?.usdBalance).toFixed(5) || 0} */}
       </Text>
+
+      <View className="w-[90%] rounded-3xl bg-black/25 p-4 mt-3">
+        <Text className="text-white font-pbold text-lg text-center">🏡 Household Garden Dashboard</Text>
+        <View className="flex-row flex-wrap justify-between mt-3">
+          <Text className="text-white w-1/2">🌾 Harvests: {farmSummary.harvests}</Text>
+          <Text className="text-white w-1/2">💚 Avg health: {farmSummary.averageHealth}%</Text>
+          <Text className="text-white w-1/2 mt-1">📅 Days planned: {farmSummary.groceryDaysPlanned}</Text>
+          <Text className="text-white w-1/2 mt-1">🌳 Longest cycle: {farmSummary.longestCycleDays}d</Text>
+        </View>
+        {farmRecords.slice(0, 3).map((item) => (
+          <Text key={item.id} className="text-yellow-100 text-xs mt-2">
+            {item.emoji} {item.displayName}: {item.stageName}, {item.plantHealth}% health, {item.cycleDays} real-life days
+          </Text>
+        ))}
+      </View>
 
       {/* Tabs */}
       <View className="w-[90%] flex-row justify-around mt-2 ">
@@ -222,6 +230,7 @@ const Profile = () => {
       {/* Chart Container */}
 
       <View className="w-[90%] mt-4 rounded-3xl bg-[#D4B75873] p-4">
+        <Text className="text-white font-pbold text-center mb-2">Recent harvest health by crop</Text>
         {loading ? (
           <ActivityIndicator size="large" color="#fff" className="mt-8" />
         ) : (
@@ -243,8 +252,8 @@ const Profile = () => {
                 contentContainerStyle={{ paddingHorizontal: 30 }}
               >
                 <View className="flex-row items-end justify-between h-[200px] gap-6">
-                  {chartData.data.map((value: any, index: number) => {
-                    const heightPercent = (value / maxValue) * 100;
+                  {(chartData.data.length ? chartData.data : [0]).map((value: any, index: number) => {
+                    const heightPercent = Math.min(100, (value / 100) * 100);
 
                     return (
                       <View key={index} className="items-center">
@@ -266,8 +275,8 @@ const Profile = () => {
               </ScrollView>
             </View>
             <View className="flex-row justify-between w-[60%] gap-8 ml-16">
-              {xAxisLabels.map((val, i) => (
-                <Text key={i} className="text-white text-xs">
+              {(chartData.labels.length ? chartData.labels : ["🌱"]).map((val, i) => (
+                <Text key={`${val}-${i}`} className="text-white text-xs">
                   {val}
                 </Text>
               ))}
@@ -276,17 +285,12 @@ const Profile = () => {
         )}
       </View>
 
-      {/* Withdraw */}
-      <CustomButton
-        title={t("buttons.claim")}
-        handlePress={() => {
-          router.push("/(tabs)/(sub-tabs)/claimScreen");
-          playSound(require("@/assets/sounds/click.mp3"), 0.05);
-        }}
-        containerStyles="w-[200px]"
-        textStyles={"font-pbold text-white"}
-        isLoading={false}
-      />
+      <View className="w-[90%] bg-green-900/50 rounded-2xl p-3 mt-3">
+        <Text className="text-white text-center font-pbold">🌻 Next best action</Text>
+        <Text className="text-white/90 text-center text-xs mt-1">
+          Use this dashboard to compare crop health, real-life cycle length, and harvest timing before planting your next grocery bed.
+        </Text>
+      </View>
 
     </View>
   );

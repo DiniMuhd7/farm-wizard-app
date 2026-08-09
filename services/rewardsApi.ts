@@ -50,8 +50,23 @@ export const equipCosmetic = async (id: string) => {
 };
 
 // ---- Short videos (watch & earn) ----
+const SHORTS_SEARCH_PARAMS = {
+  // Keep Watch & Earn content focused on U.S. household-scale farming topics.
+  q: [
+    "United States backyard farming",
+    "home garden plants",
+    "household vegetable gardening",
+    "small farm agriculture",
+    "urban homestead gardening",
+  ].join(" OR "),
+  regionCode: "US",
+  relevanceLanguage: "en",
+  videoDuration: "short",
+  safeSearch: "strict",
+};
+
 export const getShorts = async () => {
-  const res = await client.get("/shorts");
+  const res = await client.get("/shorts", { params: SHORTS_SEARCH_PARAMS });
   return res.data; // { success, date, videos: [{ videoId, title, channelTitle, thumbnail, subscribers }] }
 };
 

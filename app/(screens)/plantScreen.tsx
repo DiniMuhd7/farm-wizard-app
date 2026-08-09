@@ -48,11 +48,12 @@ import BannerAdComponent from "@/utils/BannerAdComponent";
 import { schedulePausedSessionReminder } from "@/utils/notifications";
 import { recordEvent } from "@/utils/engagement";
 import { canShowInterstitial, markInterstitialShown } from "@/utils/adFrequency";
+import { getTrendTipForSession } from "@/constants/gardenTrends";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-// Total session length. Casual-game best practice keeps a play session
-// in the 1-3 minute range; 3 minutes gives 45s per growth stage.
-const GAME_DURATION = 3 * 60;
+// Long grocery-garden session: each phase maps to real crop stages while
+// keeping a single mobile session playable for household farmers.
+const GAME_DURATION = 12 * 60;
 const TEN_MINUTES = GAME_DURATION; // legacy alias used throughout this file
 const PHASE_DURATION = GAME_DURATION / 4; // one growth stage
 
@@ -285,6 +286,32 @@ const PlantScreen = () => {
     router.replace("/(screens)/selectSeed");
     return null;
   }
+  const plantStagePlan = plant?.stages || [];
+  const plantCycleDays = plant?.cycleDays || 0;
+  const currentStagePlan = plantStagePlan[getPlantStage()] || plantStagePlan[0];
+  const emojiPlantSize = 96 + getPlantStage() * 44;
+  const getSessionTip = () => {
+    const trendTip = getTrendTipForSession({
+      currentSeason,
+      waterLevel,
+      nutrientLevel,
+      hasThreat: Boolean(activeThreat && !activeThreat.resolved),
+    });
+    if (activeThreat && !activeThreat.resolved) {
+      return activeThreat.type === "disease"
+        ? "🐛 Pest spotted: tap the crop or spray quickly before health drops."
+        : "⛈️ Storm risk: pause extra watering and protect tender stems.";
+    }
+    if (waterLevel < 25) return "💧 Dry soil: water now, then mulch to hold moisture.";
+    if (nutrientLevel < 25) return "🪱 Low nutrients: feed lightly with compost or fertilizer.";
+    if (currentSeason === "dry") return "☀️ Dry spell: check soil more often and shade seedlings.";
+    if (currentSeason === "raining") return "🌧️ Rainy spell: watch for fungus and nutrient leaching.";
+    return `${trendTip.emoji} ${trendTip.title}: ${trendTip.tip}`;
+  };
+  const realDaysElapsed = Math.min(
+    plantCycleDays,
+    Math.round(((TEN_MINUTES - timeLeft) / TEN_MINUTES) * plantCycleDays)
+  );
 
   const getCurrentSeason = (): SeasonType => {
     const elapsed = TEN_MINUTES - timeLeft;
@@ -488,11 +515,12 @@ const PlantScreen = () => {
   const handlePlantLifeCycle = () => {
     const now = Date.now();
 
-    // Decay logic — softened for the shorter (3 min) sessions so tending
-    // stays engaging rather than frantic. Applied once per second.
+    // Decay logic mirrors garden care rhythms for a longer planning session.
+    // Dry spells mainly reduce water, rain can leach nutrients, and normal
+    // weather changes slowly enough to support longer crop cycles.
     const waterDecay =
-      currentSeason === "dry" ? 4 : currentSeason === "normal" ? 2 : 0;
-    const nutrientDecay = currentSeason === "raining" ? 4 : 3;
+      currentSeason === "dry" ? 1.1 : currentSeason === "normal" ? 0.45 : 0.15;
+    const nutrientDecay = currentSeason === "raining" ? 0.75 : 0.35;
 
     setWaterLevel((prev) => Math.max(0, prev - waterDecay));
     setNutrientLevel((prev) => Math.max(0, prev - nutrientDecay));
@@ -1248,6 +1276,20 @@ const PlantScreen = () => {
             )}
             <Text className="text-yellow-600 text-lg">{showGiftMessage}</Text>
             <Text className="text-white text-3xl font-bold">{score}</Text>
+            <Text className="bg-green-900/70 text-white text-xs text-center rounded-2xl px-4 py-2 mt-2 mx-4">
+              {getSessionTip()}
+            </Text>
+            <View className="bg-black/35 rounded-2xl px-4 py-2 mt-2 mx-4">
+              <Text className="text-white text-center font-pbold">
+                {plant.emoji || "🌱"} {plant.diplayName} • {plant.gardenType}
+              </Text>
+              <Text className="text-yellow-200 text-center text-xs mt-1">
+                Real cycle: day {realDaysElapsed} of {plantCycleDays} • {currentStagePlan?.name}
+              </Text>
+              <Text className="text-white/80 text-center text-xs mt-1">
+                Spacing tip: {plant.spacing}
+              </Text>
+            </View>
           </View>
 
           {spraying && (
@@ -1363,23 +1405,34 @@ const PlantScreen = () => {
                 }}
               />
             )}
-            {isTimerActive && !soilVisible && (
-              <Animated.Image
-                source={
-                  plantDamaged
-                    ? plantSickImages[getPlantStage()]
-                    : currentSeason === "raining"
-                    ? plantRainImages[getPlantStage()]
-                    : plantImages[getPlantStage()]
-                }
-                className={`w-48 `}
-                resizeMode="contain"
-                style={{
-                  height: getPlantSize(),
-                  // transform: [{ scale: plantScale }],
-                }}
-              />
-            )}
+            {isTimerActive && !soilVisible &&
+              (plantImages?.length ? (
+                <Animated.Image
+                  source={
+                    plantDamaged
+                      ? plantSickImages[getPlantStage()]
+                      : currentSeason === "raining"
+                      ? plantRainImages[getPlantStage()]
+                      : plantImages[getPlantStage()]
+                  }
+                  className={`w-48 `}
+                  resizeMode="contain"
+                  style={{
+                    height: getPlantSize(),
+                  }}
+                />
+              ) : (
+                <Animated.Text
+                  style={{
+                    fontSize: emojiPlantSize,
+                    transform: [{ scale: plantScale }],
+                    textShadowColor: plantDamaged ? "#D22" : "#174A22",
+                    textShadowRadius: plantDamaged ? 10 : 3,
+                  }}
+                >
+                  {plant.emoji || "🌱"}
+                </Animated.Text>
+              ))}
           </View>
 
           {/* Tool buttons */}
@@ -1415,7 +1468,7 @@ const PlantScreen = () => {
               />
             </View>
             <Text className="text-center text-white mt-1">
-              {getPlantStage() * 25}
+              {Math.min(100, Math.round(((TEN_MINUTES - timeLeft) / TEN_MINUTES) * 100))}% • {currentStagePlan?.days || 0} real days in this stage
             </Text>
           </View>
 

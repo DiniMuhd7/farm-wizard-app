@@ -27,7 +27,7 @@ import { useTranslation } from "react-i18next";
 import { submitConversion } from "@/services/user";
 import CountryPhoneInput from "@/components/CountryPhoneInput";
 
-const tabs = ["Token"] as const;
+const tabs = ["Garden Grants"] as const;
 
 type Provider = {
   name: string;
@@ -37,21 +37,24 @@ type Provider = {
 };
 
 const providers = {
-  Token: [
+  "Garden Grants": [
     {
-      name: "Telegram",
-      icon: icons.telegram,
-      bg: "bg-blue-500",
+      name: "Seed swap",
+      icon: undefined,
+      emoji: "🌱",
+      bg: "bg-green-600",
     },
     {
-      name: "Bybit",
-      icon: icons.bybit,
-      bg: "bg-gray-500",
+      name: "Compost kit",
+      icon: undefined,
+      emoji: "🪱",
+      bg: "bg-amber-700",
     },
     {
-      name: "Other",
-      emoji: "💳",
-      bg: "bg-gray-600",
+      name: "Garden club",
+      icon: undefined,
+      emoji: "🏡",
+      bg: "bg-emerald-700",
     },
   ],
   Airtime: [
@@ -119,7 +122,7 @@ const ClaimScreen = () => {
     router.replace("/");
   }
   const isAdmin = user?.userType === "admin";
-  const [activeTab, setActiveTab] = useState<keyof typeof providers>("Token");
+  const [activeTab, setActiveTab] = useState<keyof typeof providers>("Garden Grants");
   const [selectedProvider, setSelectedProvider] = useState<Provider>();
   const [modalVisible, setModalVisible] = useState(false);
   const [conversionModal, setConversionModal] = useState(false);
@@ -130,11 +133,11 @@ const ClaimScreen = () => {
     amount: user.usdBalance,
     phoneNo: "",
     data: "",
-    network: "TON",
+    network: "Seed preference",
   });
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
 
-  const handleTabChange = (tab: "Token" | "Airtime" | "Data bundle") => {
+  const handleTabChange = (tab: "Garden Grants" | "Airtime" | "Data bundle") => {
     setActiveTab(tab);
     setForm({ ...form, phoneNo: "" });
   };
@@ -198,7 +201,7 @@ const ClaimScreen = () => {
     const reference = `withdraw-${uuid.v4().split("-")[0]}`;
     const provider = selectedNetwork ? selectedNetwork : selectedProvider?.name;
     if (
-      (type === "Token" || type === "Data bundle" || type === "Airtime") &&
+      (type === "Garden Grants" || type === "Data bundle" || type === "Airtime") &&
       !form.phoneNo
     ) {
       Alert.alert("Error", "Please fill in all fields");
@@ -309,7 +312,7 @@ const ClaimScreen = () => {
   const progressPct = Math.min(100, (usdValue / MIN_USD) * 100);
 
   // The "Other" provider receives via phone number, with the network field
-  // being an optional bank/app name rather than a crypto chain.
+  // being an optional bank/app name rather than a garden reward option.
   const isOther = selectedProvider?.name === "Other";
   const isPhoneProvider = isOther;
 
@@ -343,7 +346,7 @@ const ClaimScreen = () => {
           <Text className="text-base font-pmedium">WizPoints</Text>
         </Text>
         <Text className="text-white/90 text-sm text-center">
-          ≈ ${usdValue.toFixed(4)} in crypto token
+          ≈ ${usdValue.toFixed(4)} in garden grant
         </Text>
 
         <View className="h-2 bg-black/25 rounded-full mt-3 overflow-hidden">
@@ -361,7 +364,7 @@ const ClaimScreen = () => {
         </Text>
       </View>
 
-      {activeTab === "Token" && (
+      {activeTab === "Garden Grants" && (
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
           style={{ flex: 1, width: "100%" }}
@@ -371,17 +374,17 @@ const ClaimScreen = () => {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingBottom: 24 }}
           >
-            {/* How crypto token claims work */}
+            {/* How garden grant claims work */}
             <View className="bg-black/30 rounded-2xl p-4 my-3">
               <Text className="text-[#F2DE9F] font-pbold text-base mb-2">
-                How crypto token claims work
+                How garden grant claims work
               </Text>
               {[
                 "Play games to earn WizPoints.",
                 `Reach ${MIN_WIZ.toLocaleString()} WizPoints ($${MIN_USD}) to become eligible to claim.`,
-                "Choose where to receive your tokens (Telegram or Bybit).",
-                "Enter your wallet address and the network (e.g. TON, BEP20).",
-                "Submit your claim — our team verifies it, then sends the crypto tokens to your wallet.",
+                "Choose where to receive your garden rewards (Telegram or Garden club).",
+                "Enter your mailing/contact details and the network (e.g. seed preference, ZIP code).",
+                "Submit your claim — our team verifies it, then prepares the garden support reward.",
               ].map((step, i) => (
                 <View key={i} className="flex-row mb-1.5">
                   <View className="w-5 h-5 rounded-full bg-[#E0C145B8] items-center justify-center mr-2 mt-0.5">
@@ -402,7 +405,7 @@ const ClaimScreen = () => {
 
             {/* Step 1: choose provider */}
             <Text className="text-white font-pbold text-base mb-2">
-              1. Choose where to receive your tokens
+              1. Choose where to receive your garden rewards
             </Text>
             <View className="flex-row flex-wrap justify-between mb-4">
               {providers[activeTab].map((provider, index) => (
@@ -432,18 +435,18 @@ const ClaimScreen = () => {
               ))}
             </View>
 
-            {/* Step 2: wallet / phone details */}
+            {/* Step 2: contact / phone details */}
             <Text className="text-white font-pbold text-base mb-1">
-              2. Enter your {isPhoneProvider ? "payout details" : "wallet details"}
+              2. Enter your {isPhoneProvider ? "payout details" : "garden reward details"}
             </Text>
             <FormField
               type="text"
               placeholder={
                 isPhoneProvider
                   ? "Enter your phone number"
-                  : "Paste your wallet address"
+                  : "Paste your mailing/contact details"
               }
-              title={isPhoneProvider ? "Phone number" : "Wallet address"}
+              title={isPhoneProvider ? "Phone number" : "Mailing/contact details"}
               value={form.phoneNo}
               handleChangeText={(e: any) => setForm({ ...form, phoneNo: e })}
               otherStyles="my-2"
@@ -455,7 +458,7 @@ const ClaimScreen = () => {
                   ? "e.g. your bank or app name (Optional)"
                   : isPhoneProvider
                   ? "Optional"
-                  : "e.g. TON, BEP20, ERC20"
+                  : "e.g. seed preference, ZIP code, ERC20"
               }
               title={
                 isOther
@@ -470,7 +473,7 @@ const ClaimScreen = () => {
             />
 
             <CustomButton
-              title={isEligible ? "Claim my tokens" : "Keep playing to unlock"}
+              title={isEligible ? "Claim my garden rewards" : "Keep playing to unlock"}
               handlePress={submitWithdrawal}
               containerStyles="w-full"
               textStyles={"font-pbold text-white"}
@@ -649,8 +652,8 @@ const ClaimScreen = () => {
             </Text>
             <FormField
               type="text"
-              placeholder={t("destination_wallet_addres")}
-              title={t("destination_wallet_addres")}
+              placeholder="Enter mailing/contact details"
+              title="Mailing/contact details"
               value={form.phoneNo}
               handleChangeText={(e: any) => setForm({ ...form, phoneNo: e })}
               otherStyles="my-2"
@@ -717,10 +720,10 @@ const ClaimScreen = () => {
 
             {/* <FormField
               type="text"
-              placeholder="Enter Toekn"
+              placeholder="Enter reward points"
               title="Wiz Points"
               value={token}
-              handleChangeText={(e: any) => setToken(e)}
+              handleChangeText={(e: any) => setForm({ ...form, data: e })}
               otherStyles=""
             /> */}
 

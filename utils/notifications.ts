@@ -85,7 +85,7 @@ export const scheduleComeBackReminder = async () => {
         title: "🌱 Your farm misses you!",
         body: "Come back to Farm Wizard — your crops are waiting to grow and earn you points.",
       },
-      trigger: { seconds: 24 * 60 * 60 },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 24 * 60 * 60 },
     });
   } catch (e) {
     console.warn("Failed to schedule come-back reminder:", e);
@@ -106,7 +106,7 @@ export const schedulePausedSessionReminder = async (plantName?: string) => {
           ? `Your ${plantName} is waiting — come back and finish growing it!`
           : "Your plant is waiting — come back and finish the session!",
       },
-      trigger: { seconds: 2 * 60 * 60 },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 2 * 60 * 60 },
     });
   } catch (e) {
     console.warn("Failed to schedule paused-session reminder:", e);

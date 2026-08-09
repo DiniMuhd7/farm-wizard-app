@@ -96,6 +96,8 @@ export default function FarmPerformance() {
             <PerformanceCard label="Average health" value={`${summary.averageHealth}%`} emoji="💚" />
             <PerformanceCard label="Garden days planned" value={`${summary.groceryDaysPlanned}`} emoji="📅" />
             <PerformanceCard label="Average crop cycle" value={`${averageCycle}d`} emoji="🧭" />
+            <PerformanceCard label="Plants simulated" value={`${summary.simultaneousPlantings}`} emoji="🪴" />
+            <PerformanceCard label="Avg offline gap" value={`${summary.averageOfflineHealthGap >= 0 ? "+" : ""}${summary.averageOfflineHealthGap}%`} emoji="⚖️" />
           </View>
 
           <View className="bg-green-950/70 rounded-3xl p-4 mb-4 border border-white/10">
@@ -155,6 +157,19 @@ export default function FarmPerformance() {
                 </View>
                 <Text className="text-white/85 text-sm mt-2">
                   {healthLabel(item.plantHealth)} • {item.plantHealth}% health • {item.cycleDays} real-life days • {item.stageName}
+                </Text>
+                {item.companionPlants && item.companionPlants.length > 0 && (
+                  <Text className="text-yellow-100 text-xs mt-1">
+                    Companion KPI bed: {item.companionPlants.join(", ")}
+                  </Text>
+                )}
+                {item.offlineComparison && item.offlineGarden && (
+                  <Text className="text-white/75 text-xs mt-1">
+                    Offline comparison vs {item.offlineGarden.plantName}: {item.offlineComparison.healthGap >= 0 ? "+" : ""}{item.offlineComparison.healthGap}% health, stage gap {item.offlineComparison.stageGap}, day gap {item.offlineComparison.dayGap}.
+                  </Text>
+                )}
+                <Text className="text-green-100 text-xs mt-1">
+                  Nutrition: {item.nutritionStrength || "Garden freshness"} — {item.nutritionImpact || "Adds fresh produce variety to household meals."}
                 </Text>
                 <Text className="text-white/60 text-xs mt-1">
                   Garden Points earned: {item.score.toLocaleString()}

@@ -10,6 +10,21 @@ export type FarmCycleRecord = {
   stageIndex: number;
   score: number;
   plantHealth: number;
+  companionPlants?: string[];
+  simulationDays?: number;
+  nutritionStrength?: string;
+  nutritionImpact?: string;
+  offlineGarden?: {
+    plantName: string;
+    health: number;
+    growthStage: number;
+    daysGrowing: number;
+  };
+  offlineComparison?: {
+    healthGap: number;
+    stageGap: number;
+    dayGap: number;
+  };
   completedAt: string;
 };
 
@@ -53,6 +68,27 @@ export const summarizeFarmCycleRecords = (records: FarmCycleRecord[]) => {
     (sum, item) => sum + item.cycleDays,
     0
   );
+  const simultaneousPlantings = records.reduce(
+    (sum, item) => sum + 1 + (item.companionPlants?.length || 0),
+    0
+  );
+  const offlineComparisons = records.filter((item) => item.offlineComparison);
+  const averageOfflineHealthGap = offlineComparisons.length
+    ? Math.round(
+        offlineComparisons.reduce(
+          (sum, item) => sum + (item.offlineComparison?.healthGap || 0),
+          0
+        ) / offlineComparisons.length
+      )
+    : 0;
 
-  return { harvests, averageHealth, totalPoints, longestCycleDays, groceryDaysPlanned };
+  return {
+    harvests,
+    averageHealth,
+    totalPoints,
+    longestCycleDays,
+    groceryDaysPlanned,
+    simultaneousPlantings,
+    averageOfflineHealthGap,
+  };
 };

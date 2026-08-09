@@ -44,6 +44,7 @@ export const usePlantGrowth = () => {
         { name: "Blossom and pollination seasons", days: 730 },
         { name: "First reliable fruiting window", days: 700 },
       ],
+      nutrition: { strength: "Fiber + polyphenols", impact: "Supports heart-friendly snacking and digestive health." },
     },
     {
       id: 2,
@@ -81,6 +82,7 @@ export const usePlantGrowth = () => {
         { name: "Tassel and silk pollination", days: 20 },
         { name: "Milk stage harvest", days: 19 },
       ],
+      nutrition: { strength: "Carbohydrates + fiber", impact: "Provides garden-fresh energy and supports meal satiety." },
     },
     {
       id: 3,
@@ -118,6 +120,7 @@ export const usePlantGrowth = () => {
         { name: "Flowering and fruit set", days: 365 },
         { name: "Mature fruit harvest", days: 460 },
       ],
+      nutrition: { strength: "Vitamin C + carotenoids", impact: "Contributes antioxidant support and immune-friendly fruit servings." },
     },
     {
       id: 4,
@@ -155,6 +158,7 @@ export const usePlantGrowth = () => {
         { name: "Bloom and fruit set", days: 245 },
         { name: "Color break and harvest", days: 365 },
       ],
+      nutrition: { strength: "Vitamin C + hydration", impact: "Supports immune health and refreshing household fruit intake." },
     },
     {
       id: 5,
@@ -192,6 +196,7 @@ export const usePlantGrowth = () => {
         { name: "Flowering and fruit set", days: 90 },
         { name: "Ripening harvest window", days: 90 },
       ],
+      nutrition: { strength: "Vitamin C + beta-carotene", impact: "Adds antioxidant fruit value and colorful micronutrients." },
     },
 
     {
@@ -215,6 +220,7 @@ export const usePlantGrowth = () => {
         { name: "Flowering and fruit set", days: 18 },
         { name: "Ripening harvest window", days: 15 },
       ],
+      nutrition: { strength: "Vitamin C + potassium", impact: "Supports fresh salsa meals, hydration, and heart-friendly potassium intake." },
     },
     {
       id: 7,
@@ -237,6 +243,7 @@ export const usePlantGrowth = () => {
         { name: "Head/leaf fill", days: 14 },
         { name: "Cut-and-come harvest", days: 10 },
       ],
+      nutrition: { strength: "Vitamin K + folate", impact: "Adds leafy greens that support balanced meals and micronutrient variety." },
     },
     {
       id: 8,
@@ -259,6 +266,7 @@ export const usePlantGrowth = () => {
         { name: "Flower and green berry", days: 90 },
         { name: "Red berry harvest", days: 125 },
       ],
+      nutrition: { strength: "Vitamin C + manganese", impact: "Adds antioxidant-rich berries for snacks, smoothies, and family desserts." },
     },
   ];
 };

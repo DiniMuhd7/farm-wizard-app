@@ -248,7 +248,7 @@ export default Home = () => {
       {/* Top bar */}
       <View className="w-full px-2 flex-row justify-between items-center mt-6">
         <View className="flex-row">
-          <TouchableOpacity className="">
+          <TouchableOpacity className="" onPress={() => router.push("/(tabs)/profile")}>
             <Image
               source={useFramedAvatarArray(user.avatar || 0)}
               className="w-16 h-16 rounded-full"

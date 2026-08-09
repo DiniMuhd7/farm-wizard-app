@@ -10,7 +10,7 @@ import { playSound } from "@/utils/audio";
 const { width, height } = Dimensions.get("window");
 
 const SessionStarted = () => {
-  const { name } = useLocalSearchParams();
+  const { name, names, offlineGardenData } = useLocalSearchParams();
   const router = useRouter();
 
   const { t } = useTranslation();
@@ -59,7 +59,7 @@ const SessionStarted = () => {
         handlePress={() => {
           router.replace({
             pathname: "/(screens)/plantScreen",
-            params: { name: name },
+            params: { name, names, offlineGardenData },
           });
           playSound(require("@/assets/sounds/click.mp3"), 0.05);
         }}

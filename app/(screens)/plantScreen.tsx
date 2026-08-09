@@ -50,9 +50,9 @@ import { recordEvent } from "@/utils/engagement";
 import { canShowInterstitial, markInterstitialShown } from "@/utils/adFrequency";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
-// Total session length. Casual-game best practice keeps a play session
-// in the 1-3 minute range; 3 minutes gives 45s per growth stage.
-const GAME_DURATION = 3 * 60;
+// Long grocery-garden session: each phase maps to real crop stages while
+// keeping a single mobile session playable for household farmers.
+const GAME_DURATION = 12 * 60;
 const TEN_MINUTES = GAME_DURATION; // legacy alias used throughout this file
 const PHASE_DURATION = GAME_DURATION / 4; // one growth stage
 
@@ -285,6 +285,13 @@ const PlantScreen = () => {
     router.replace("/(screens)/selectSeed");
     return null;
   }
+  const plantStagePlan = plant?.stages || [];
+  const plantCycleDays = plant?.cycleDays || 0;
+  const currentStagePlan = plantStagePlan[getPlantStage()] || plantStagePlan[0];
+  const realDaysElapsed = Math.min(
+    plantCycleDays,
+    Math.round(((TEN_MINUTES - timeLeft) / TEN_MINUTES) * plantCycleDays)
+  );
 
   const getCurrentSeason = (): SeasonType => {
     const elapsed = TEN_MINUTES - timeLeft;
@@ -488,11 +495,12 @@ const PlantScreen = () => {
   const handlePlantLifeCycle = () => {
     const now = Date.now();
 
-    // Decay logic — softened for the shorter (3 min) sessions so tending
-    // stays engaging rather than frantic. Applied once per second.
+    // Decay logic mirrors garden care rhythms for a longer planning session.
+    // Dry spells mainly reduce water, rain can leach nutrients, and normal
+    // weather changes slowly enough to support longer crop cycles.
     const waterDecay =
-      currentSeason === "dry" ? 4 : currentSeason === "normal" ? 2 : 0;
-    const nutrientDecay = currentSeason === "raining" ? 4 : 3;
+      currentSeason === "dry" ? 1.1 : currentSeason === "normal" ? 0.45 : 0.15;
+    const nutrientDecay = currentSeason === "raining" ? 0.75 : 0.35;
 
     setWaterLevel((prev) => Math.max(0, prev - waterDecay));
     setNutrientLevel((prev) => Math.max(0, prev - nutrientDecay));
@@ -1248,6 +1256,17 @@ const PlantScreen = () => {
             )}
             <Text className="text-yellow-600 text-lg">{showGiftMessage}</Text>
             <Text className="text-white text-3xl font-bold">{score}</Text>
+            <View className="bg-black/35 rounded-2xl px-4 py-2 mt-2 mx-4">
+              <Text className="text-white text-center font-pbold">
+                {plant.emoji || "🌱"} {plant.diplayName} • {plant.gardenType}
+              </Text>
+              <Text className="text-yellow-200 text-center text-xs mt-1">
+                Real cycle: day {realDaysElapsed} of {plantCycleDays} • {currentStagePlan?.name}
+              </Text>
+              <Text className="text-white/80 text-center text-xs mt-1">
+                Spacing tip: {plant.spacing}
+              </Text>
+            </View>
           </View>
 
           {spraying && (
@@ -1415,7 +1434,7 @@ const PlantScreen = () => {
               />
             </View>
             <Text className="text-center text-white mt-1">
-              {getPlantStage() * 25}
+              {Math.min(100, Math.round(((TEN_MINUTES - timeLeft) / TEN_MINUTES) * 100))}% • {currentStagePlan?.days || 0} real days in this stage
             </Text>
           </View>
 

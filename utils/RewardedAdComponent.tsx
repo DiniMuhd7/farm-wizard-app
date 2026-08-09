@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import {
   RewardedAd,
   RewardedAdEventType,
-  TestIds,
   AdEventType,
 } from "react-native-google-mobile-ads";
 import AsyncStorage from "@react-native-async-storage/async-storage";

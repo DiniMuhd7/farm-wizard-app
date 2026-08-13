@@ -1,0 +1,9 @@
+envVarGroups:
+  - name: farm-wizard-ai-security
+    envVars:
+      - key: AI_MODEL_PROVIDER
+        value: openai
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
+      - key: OPENAI_API_KEY
+        sync: false

@@ -26,6 +26,8 @@ const WATCH_SECONDS = 15; // must watch this long before claiming
 // Ad-frequency cap (AdMob policy): show an interstitial at most every Nth
 // short AND no more than once per the app-wide minimum interval.
 const AD_EVERY = 3;
+const YOUTUBE_EMBED_ORIGIN = "https://farmwizard.app";
+const YOUTUBE_PLAYER_REFERER = `${YOUTUBE_EMBED_ORIGIN}/`;
 
 type Short = {
   videoId: string;
@@ -33,6 +35,20 @@ type Short = {
   channelTitle: string;
   thumbnail: string;
   subscribers: number;
+};
+
+const buildYouTubeEmbedUrl = (videoId: string, isActive: boolean) => {
+  const params = new URLSearchParams({
+    playsinline: "1",
+    rel: "0",
+    modestbranding: "1",
+    autoplay: isActive ? "1" : "0",
+    mute: "1",
+    enablejsapi: "1",
+    origin: YOUTUBE_EMBED_ORIGIN,
+  });
+
+  return `https://www.youtube.com/embed/${videoId}?${params.toString()}`;
 };
 
 const Shorts = () => {
@@ -177,10 +193,13 @@ const Shorts = () => {
         {near ? (
           <WebView
             source={{
-              uri: `https://www.youtube.com/embed/${item.videoId}?playsinline=1&rel=0&modestbranding=1&autoplay=${
-                isActive ? 1 : 0
-              }&mute=1`,
+              uri: buildYouTubeEmbedUrl(item.videoId, isActive),
+              headers: {
+                Referer: YOUTUBE_PLAYER_REFERER,
+                Origin: YOUTUBE_EMBED_ORIGIN,
+              },
             }}
+            userAgent="Mozilla/5.0 (Linux; Android 10; FarmWizard) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36"
             style={{ flex: 1, backgroundColor: "#000" }}
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}

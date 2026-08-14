@@ -7,7 +7,7 @@ import plantImages from "./plantImages";
 export const usePlantGrowth = () => {
   const { t } = useTranslation();
 
-  return [
+  const coreSeeds: any[] = [
     {
       id: 1,
       diplayName: t("plants.apple"),
@@ -269,6 +269,65 @@ export const usePlantGrowth = () => {
       nutrition: { strength: "Vitamin C + manganese", impact: "Adds antioxidant-rich berries for snacks, smoothies, and family desserts." },
     },
   ];
+
+  const seedCatalog: any[] = [
+    { name: "Carrot", emoji: "🥕", cycleDays: 70, gardenType: "Cool-season root bed", spacing: "2–3 in apart in loose soil", nutrition: { strength: "Beta-carotene + fiber", impact: "Adds crunchy vitamin-rich roots for soups, salads, and snacks." } },
+    { name: "Potato", emoji: "🥔", cycleDays: 100, gardenType: "Raised ridge or grow-bag crop", spacing: "Seed potatoes 10–12 in apart", nutrition: { strength: "Potassium + complex carbs", impact: "Supports filling home meals with versatile garden staples." } },
+    { name: "Onion", emoji: "🧅", cycleDays: 110, gardenType: "Allium storage bed", spacing: "4–6 in apart in full sun", nutrition: { strength: "Prebiotic fiber", impact: "Builds flavorful bases for everyday cooking." } },
+    { name: "Pepper", emoji: "🫑", cycleDays: 80, gardenType: "Warm-season container crop", spacing: "18 in apart with steady warmth", nutrition: { strength: "Vitamin C + color antioxidants", impact: "Adds crisp, colorful produce to quick meals." } },
+    { name: "Cucumber", emoji: "🥒", cycleDays: 60, gardenType: "Trellised summer vine", spacing: "12 in apart on a trellis", nutrition: { strength: "Hydration + vitamin K", impact: "Adds refreshing snacks and salad crunch." } },
+    { name: "Broccoli", emoji: "🥦", cycleDays: 85, gardenType: "Cool-season brassica bed", spacing: "18 in apart with compost", nutrition: { strength: "Vitamin C + sulforaphane", impact: "Supports hearty green side dishes." } },
+    { name: "Eggplant", emoji: "🍆", cycleDays: 90, gardenType: "Warm patio fruiting crop", spacing: "24 in apart with support", nutrition: { strength: "Fiber + anthocyanins", impact: "Adds savory harvests for stews and grilling." } },
+    { name: "Watermelon", emoji: "🍉", cycleDays: 95, gardenType: "Large sunny vine patch", spacing: "3–4 ft apart or strong trellis", nutrition: { strength: "Hydration + lycopene", impact: "Rewards patient players with refreshing family fruit." } },
+    { name: "Pumpkin", emoji: "🎃", cycleDays: 110, gardenType: "Sprawling fall harvest vine", spacing: "3–5 ft apart", nutrition: { strength: "Vitamin A + fiber", impact: "Adds storage squash for soups and baking." } },
+    { name: "Spinach", emoji: "🍃", cycleDays: 40, gardenType: "Fast cool-season greens", spacing: "3–5 in apart", nutrition: { strength: "Iron + folate", impact: "Adds quick leafy greens for omelets and smoothies." } },
+    { name: "Kale", emoji: "🥬", cycleDays: 60, gardenType: "Hardy leafy-green bed", spacing: "12–18 in apart", nutrition: { strength: "Vitamin K + calcium", impact: "Keeps producing nutrient-dense leaves after harvests." } },
+    { name: "Bean", emoji: "🫘", cycleDays: 55, gardenType: "Nitrogen-fixing row crop", spacing: "4–6 in apart", nutrition: { strength: "Plant protein + fiber", impact: "Adds protein-rich pods and improves garden soil." } },
+    { name: "Pea", emoji: "🫛", cycleDays: 65, gardenType: "Cool trellised legume", spacing: "2 in apart along netting", nutrition: { strength: "Plant protein + vitamin C", impact: "Rewards steady watering with sweet pods." } },
+    { name: "Radish", emoji: "🌶️", cycleDays: 28, gardenType: "Quick root challenge bed", spacing: "1–2 in apart", nutrition: { strength: "Vitamin C + crunch", impact: "Fast unlock crop for practicing timing." } },
+    { name: "Beet", emoji: "🟣", cycleDays: 60, gardenType: "Root-and-greens bed", spacing: "3–4 in apart", nutrition: { strength: "Folate + betalains", impact: "Adds colorful roots and edible greens." } },
+    { name: "Garlic", emoji: "🧄", cycleDays: 240, gardenType: "Overwinter allium bed", spacing: "4–6 in apart", nutrition: { strength: "Allicin compounds", impact: "Rewards long planning with kitchen flavor staples." } },
+    { name: "Ginger", emoji: "🫚", cycleDays: 240, gardenType: "Warm container rhizome", spacing: "8 in apart in rich soil", nutrition: { strength: "Gingerols", impact: "Adds aromatic harvests for teas and sauces." } },
+    { name: "Blueberry", emoji: "🫐", cycleDays: 730, gardenType: "Acid-loving berry shrub", spacing: "3–4 ft apart", nutrition: { strength: "Anthocyanins + fiber", impact: "Long-term berry unlock for advanced gardeners." } },
+    { name: "Grape", emoji: "🍇", cycleDays: 1095, gardenType: "Permanent trellised vine", spacing: "6–8 ft apart", nutrition: { strength: "Polyphenols", impact: "Prestige fruit crop for dedicated farm progression." } },
+    { name: "Pineapple", emoji: "🍍", cycleDays: 730, gardenType: "Tropical container fruit", spacing: "18–24 in apart", nutrition: { strength: "Vitamin C + bromelain", impact: "A premium tropical challenge crop." } },
+    { name: "Banana", emoji: "🍌", cycleDays: 365, gardenType: "Tropical patio grove", spacing: "6–10 ft or large container", nutrition: { strength: "Potassium + energy", impact: "Advanced fruit crop with strong household value." } },
+    { name: "Avocado", emoji: "🥑", cycleDays: 1825, gardenType: "Long-term patio/orchard tree", spacing: "Container or 15–20 ft in warm zones", nutrition: { strength: "Healthy fats + fiber", impact: "Prestige orchard unlock for patient players." } },
+    { name: "Peach", emoji: "🍑", cycleDays: 1095, gardenType: "Backyard stone-fruit tree", spacing: "12–15 ft apart", nutrition: { strength: "Vitamin C + fiber", impact: "Sweet orchard harvest for late-game farmers." } },
+    { name: "Cherry", emoji: "🍒", cycleDays: 1460, gardenType: "Temperate orchard tree", spacing: "12–18 ft apart", nutrition: { strength: "Antioxidants", impact: "High-tier fruit unlock with premium rewards." } },
+    { name: "Cabbage", emoji: "🥬", cycleDays: 90, gardenType: "Cool brassica storage crop", spacing: "18–24 in apart", nutrition: { strength: "Vitamin K + fiber", impact: "Reliable heads for family meals and slaws." } },
+    { name: "Okra", emoji: "🌿", cycleDays: 60, gardenType: "Hot-weather pod crop", spacing: "12–18 in apart", nutrition: { strength: "Fiber + magnesium", impact: "Steady picking crop for summer gardens." } },
+    { name: "Celery", emoji: "🌱", cycleDays: 120, gardenType: "Moisture-loving stalk bed", spacing: "8–10 in apart", nutrition: { strength: "Hydration + vitamin K", impact: "Challenging water-management crop." } },
+    { name: "Basil", emoji: "🌿", cycleDays: 35, gardenType: "Herb pot or kitchen bed", spacing: "8–12 in apart", nutrition: { strength: "Aromatic herbs", impact: "Fast herb harvest that boosts meal variety." } },
+    { name: "Mint", emoji: "🌿", cycleDays: 45, gardenType: "Contained herb planter", spacing: "Pot separately to prevent spread", nutrition: { strength: "Aromatic menthol", impact: "Refreshing herb for drinks and sauces." } },
+    { name: "Sunflower", emoji: "🌻", cycleDays: 90, gardenType: "Pollinator border", spacing: "12–24 in apart", nutrition: { strength: "Seeds + pollinator support", impact: "Fun visual crop that supports garden ecology." } },
+  ].map((seed, index) => ({
+    id: 9 + index,
+    diplayName: seed.name,
+    icon: null,
+    iconLg: null,
+    plantImages: [],
+    plantSickImages: [],
+    plantRainImages: [],
+    levels: Math.min(5, Math.floor(index / 6) + 1),
+    progress: Math.min(0.95, 0.15 + index * 0.025),
+    stages: [
+      { name: "Seed starting and bed prep", days: Math.max(3, Math.round(seed.cycleDays * 0.18)) },
+      { name: "Vegetative growth and care", days: Math.max(7, Math.round(seed.cycleDays * 0.34)) },
+      { name: "Flowering, bulking, or fruit set", days: Math.max(7, Math.round(seed.cycleDays * 0.25)) },
+      { name: "Harvest and storage window", days: Math.max(5, Math.round(seed.cycleDays * 0.23)) },
+    ],
+    unlockLevel: Math.floor(index / 5) + 2,
+    unlockPoints: 200 + index * 175,
+    ...seed,
+  }));
+
+  return [...coreSeeds, ...seedCatalog].map((seed, index) => ({
+    unlockLevel: seed.unlockLevel ?? Math.max(1, Math.floor(index / 4) + 1),
+    unlockPoints: seed.unlockPoints ?? (index < 3 ? 0 : index * 150),
+    rarity: seed.rarity ?? (index < 4 ? "Starter" : index < 14 ? "Skilled" : index < 26 ? "Expert" : "Master"),
+    ...seed,
+  }));
 };
 
 // Similarly for the growth messages

@@ -33,8 +33,8 @@ const SelectSeed = () => {
   }
   const isPremiumUser = user?.isPremium === true;
 
-  const [selectedIndex, setSelectedIndex] = useState(1); // Default: Maize
-  const [selectedIndexes, setSelectedIndexes] = useState<number[]>([1]);
+  const [selectedIndex, setSelectedIndex] = useState(0); // Default: first unlocked starter seed
+  const [selectedIndexes, setSelectedIndexes] = useState<number[]>([0]);
   const [includeOffline, setIncludeOffline] = useState(false);
   const [offlineForm, setOfflineForm] = useState({
     plantName: "",
@@ -46,6 +46,18 @@ const SelectSeed = () => {
 
   const plantSeeds = seeds();
   const selectedSeed = plantSeeds[selectedIndex];
+  const gardenPoints = Number(user?.score || 0);
+  const farmerLevel = Math.max(1, Math.floor(gardenPoints / 500) + 1);
+  const isSeedUnlocked = (seed: any) =>
+    isPremiumUser ||
+    (farmerLevel >= Number(seed.unlockLevel || 1) &&
+      gardenPoints >= Number(seed.unlockPoints || 0));
+  const selectedSeedUnlocked = isSeedUnlocked(selectedSeed);
+  const unlockReason = selectedSeedUnlocked
+    ? "Unlocked"
+    : `Unlock at Farmer Lv.${selectedSeed.unlockLevel || 1} + ${Number(
+        selectedSeed.unlockPoints || 0
+      ).toLocaleString()} Garden Points`;
 
   const toggleSeedSelection = (index: number) => {
     setSelectedIndexes((current) => {
@@ -71,7 +83,9 @@ const SelectSeed = () => {
       }),
     ]).start(() => {
       setSelectedIndex(index);
-      toggleSeedSelection(index);
+      if (isSeedUnlocked(plantSeeds[index])) {
+        toggleSeedSelection(index);
+      }
     });
   };
 
@@ -148,6 +162,7 @@ const SelectSeed = () => {
                   selectedIndexes.includes(index) ? "#FCD34D" : "transparent",
                 backgroundColor:
                   selectedIndexes.includes(index) ? "white" : "rgba(255,255,255,0.4)",
+                opacity: isSeedUnlocked(seed) ? 1 : 0.55,
               }}
             >
               {seed.icon ? (
@@ -158,6 +173,9 @@ const SelectSeed = () => {
                 />
               ) : (
                 <Text style={{ fontSize: width * 0.09 }}>{seed.emoji || "🌱"}</Text>
+              )}
+              {!isSeedUnlocked(seed) && (
+                <Text style={{ position: "absolute", right: 3, top: 1, fontSize: 14 }}>🔒</Text>
               )}
             </TouchableOpacity>
           ))}
@@ -217,6 +235,14 @@ const SelectSeed = () => {
             >
               {selectedSeed.diplayName}
             </Text>
+            <View className={selectedSeedUnlocked ? "bg-green-600 rounded-full px-3 py-1 mb-2" : "bg-black/50 rounded-full px-3 py-1 mb-2"}>
+              <Text className="text-white text-xs font-pbold">
+                {selectedSeedUnlocked ? "✅ Ready to plant" : "🔒 Locked seed"} • {selectedSeed.rarity || "Starter"}
+              </Text>
+            </View>
+            <Text className={selectedSeedUnlocked ? "text-green-700 text-xs text-center mb-2" : "text-red-700 text-xs text-center mb-2"}>
+              {unlockReason}
+            </Text>
             {selectedSeed.name === TODAY_CROP && (
               <View className="bg-[#E0C145] rounded-full px-3 py-1 mb-2">
                 <Text className="text-white text-xs font-pbold">
@@ -265,6 +291,11 @@ const SelectSeed = () => {
 
           <Text style={{ color: "#fff", textAlign: "center", marginTop: 4 }}>
             Selected garden bed: {selectedIndexes.map((i) => plantSeeds[i]?.emoji || "🌱").join(" ")}
+          </Text>
+          <Text style={{ color: "#FDEFC0", textAlign: "center", fontSize: 12, marginTop: 4 }}>
+            Farmer Lv.{farmerLevel} • {gardenPoints.toLocaleString()} Garden Points • {
+              plantSeeds.filter(isSeedUnlocked).length
+            }/{plantSeeds.length} seeds unlocked
           </Text>
 
           <View style={{ width: "100%", backgroundColor: "rgba(0,0,0,0.22)", borderRadius: 16, padding: 12, marginTop: 10 }}>
@@ -335,9 +366,13 @@ const SelectSeed = () => {
         </Animated.View>
 
         <CustomButton
-          title={t("buttons.select_seed")}
+          title={selectedSeedUnlocked ? t("buttons.select_seed") : "Seed Locked"}
           handlePress={() => {
-            const selectedPlants = selectedIndexes.map((i) => plantSeeds[i]?.name).filter(Boolean);
+            if (!selectedSeedUnlocked) return;
+            const selectedPlants = selectedIndexes
+              .map((i) => plantSeeds[i])
+              .filter((seed) => seed && isSeedUnlocked(seed))
+              .map((seed) => seed.name);
             router.push({
               pathname: "/(screens)/sessionStarted",
               params: {

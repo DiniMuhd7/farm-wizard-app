@@ -91,7 +91,7 @@ const Profile = () => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        const records = await getFarmCycleRecords();
+        const records = await getFarmCycleRecords(user);
         setFarmRecords(records);
         const recent = records.slice(0, 7).reverse();
         setChartData({
@@ -106,13 +106,13 @@ const Profile = () => {
     };
 
     fetchData();
-  }, [activeTab]);
+  }, [activeTab, user]);
 
   const { t } = useTranslation();
   const farmSummary = summarizeFarmCycleRecords(farmRecords);
 
   return (
-    <View className="flex-1 bg-green-200 items-center">
+    <View className="flex-1 bg-green-200">
       <BackgroundImage
         source={images.background}
         style={{ width: "100%", height: "100%", position: "absolute" }}
@@ -128,12 +128,17 @@ const Profile = () => {
         showRightButton={true}
       />
 
-      <Text className="text-white text-2xl font-primary font-bold mt-4 capitalize">
-        {t("profile")}
-      </Text>
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ alignItems: "center", paddingBottom: 36 }}
+      >
+        <Text className="text-white text-2xl font-primary font-bold mt-4 capitalize">
+          {t("profile")}
+        </Text>
 
-      {/* Avatar + Info */}
-      <View className="items-center">
+        {/* Avatar + Info */}
+        <View className="items-center">
         <View
           style={{
             borderWidth: frameColor ? 3 : 0,
@@ -195,6 +200,13 @@ const Profile = () => {
         {/* || USD:{" "}
         {Number(user?.usdBalance).toFixed(5) || 0} */}
       </Text>
+
+      <TouchableOpacity
+        className="w-[90%] bg-[#E0C145B8] rounded-full px-5 py-3 mt-2"
+        onPress={() => router.push("/(tabs)/(sub-tabs)/claimScreen")}
+      >
+        <Text className="text-white text-center font-pbold">Claim / Withdraw rewards 💰</Text>
+      </TouchableOpacity>
 
       <View className="w-[90%] rounded-3xl bg-black/25 p-4 mt-3">
         <Text className="text-white font-pbold text-lg text-center">🏡 Household Garden Dashboard</Text>
@@ -297,7 +309,7 @@ const Profile = () => {
           <Text className="text-white text-center font-pbold">Open full performance report 📊</Text>
         </TouchableOpacity>
       </View>
-
+      </ScrollView>
     </View>
   );
 };

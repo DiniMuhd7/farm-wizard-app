@@ -6,7 +6,7 @@ import {
   Linking,
   StyleSheet,
 } from "react-native";
-import { BannerAd, BannerAdSize } from "react-native-google-mobile-ads";
+import { BannerAd, BannerAdSize, TestIds } from "react-native-google-mobile-ads";
 import { Cross, ChevronRight } from "lucide-react-native";
 
 interface Props {
@@ -47,7 +47,10 @@ const LifeGateBanner = () => (
   </TouchableOpacity>
 );
 
-const BannerAdComponent = ({ style = {} }: Props) => {
+const BannerAdComponent = ({
+  adUnitId = __DEV__ ? TestIds.BANNER : "ca-app-pub-4516568539037938/3383596217",
+  style = {},
+}: Props) => {
   // AdMob banner fills the slot when it loads; while it has no fill we
   // show the LifeGate house banner instead. If AdMob later loads (it
   // refreshes periodically), the house banner is hidden again.
@@ -59,7 +62,7 @@ const BannerAdComponent = ({ style = {} }: Props) => {
       {failed && !loaded && <LifeGateBanner />}
       <View style={loaded ? undefined : styles.hidden}>
         <BannerAd
-          unitId={"ca-app-pub-4516568539037938/3383596217"}
+          unitId={adUnitId}
           size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
           requestOptions={{
             requestNonPersonalizedAdsOnly: true,
@@ -96,14 +99,15 @@ const styles = StyleSheet.create({
     borderTopColor: "#F7E7A1",
     borderBottomWidth: 1,
     borderBottomColor: "#2F7D3D",
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    height: 50,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
     width: "100%",
   },
   lifeGateIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: "#F7E7A1",
     alignItems: "center",
     justifyContent: "center",
@@ -122,20 +126,20 @@ const styles = StyleSheet.create({
   lifeGateTitle: {
     color: "#FFFFFF",
     fontWeight: "800",
-    fontSize: 14,
+    fontSize: 13,
     marginTop: 1,
   },
   lifeGateBody: {
     color: "#E7F8E7",
-    fontSize: 12,
-    marginTop: 1,
+    fontSize: 10,
+    marginTop: 0,
   },
   ctaButton: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#F9D65C",
     borderRadius: 999,
-    paddingVertical: 7,
+    paddingVertical: 5,
     paddingLeft: 12,
     paddingRight: 8,
     marginLeft: 8,

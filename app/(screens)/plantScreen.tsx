@@ -176,11 +176,10 @@ const PlantScreen = () => {
   const [soilVisible, setSoilVisible] = useState(true);
   const [confirmModal, setConfirmModal] = useState(false);
 
-  const [isDead, setIsDead] = useState(false);
 
   const [currentSeason, setCurrentSeason] = useState<SeasonType>("normal");
 
-  const [showAd, setShowAd] = useState(true);
+  const [showAd, setShowAd] = useState(false);
   // Full-screen ad shown between growth levels (after the level-up dialog)
   const [levelAd, setLevelAd] = useState(false);
   const [showGiftMessage, setShowGiftMessage] = useState("");
@@ -327,6 +326,33 @@ const PlantScreen = () => {
     Math.round(((TEN_MINUTES - timeLeft) / TEN_MINUTES) * plantCycleDays)
   );
 
+  const getGrowthRate = () => {
+    if (plantHealth >= 80) return 1;
+    if (plantHealth >= 60) return 0.8;
+    if (plantHealth >= 40) return 0.6;
+    if (plantHealth >= 20) return 0.4;
+    return 0.25;
+  };
+
+  const growthAccumulator = useRef(0);
+  const advanceGrowthClock = () => {
+    growthAccumulator.current += getGrowthRate();
+    if (growthAccumulator.current < 1) return;
+
+    const secondsToAdvance = Math.floor(growthAccumulator.current);
+    growthAccumulator.current -= secondsToAdvance;
+    setTimeLeft((prev) => {
+      if (prev <= 1) {
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
+        return 0;
+      }
+      return Math.max(0, prev - secondsToAdvance);
+    });
+  };
+
   const getCurrentSeason = (): SeasonType => {
     const elapsed = TEN_MINUTES - timeLeft;
     let acc = 0;
@@ -448,14 +474,7 @@ const PlantScreen = () => {
       setIsTimerActive(true);
       //console.log("Auto-resuming timer from /inventory");
       intervalRef.current = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            clearInterval(intervalRef.current!);
-            intervalRef.current = null;
-            return 0;
-          }
-          return prev - 1;
-        });
+        advanceGrowthClock();
 
         setCurrentSeason(getCurrentSeason());
         handlePlantLifeCycle();
@@ -467,22 +486,13 @@ const PlantScreen = () => {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
     }
-  }, [pathname, isTimerActive, waterLevel, nutrientLevel]);
+  }, [pathname, isTimerActive, waterLevel, nutrientLevel, plantHealth]);
 
   // Manual start/pause/resume logic
   useEffect(() => {
     if (isTimerActive && intervalRef.current === null) {
       intervalRef.current = setInterval(() => {
-        setTimeLeft((prev) => {
-          if (prev <= 1) {
-            if (intervalRef.current) {
-              clearInterval(intervalRef.current);
-              intervalRef.current = null;
-            }
-            return 0;
-          }
-          return prev - 1;
-        });
+        advanceGrowthClock();
 
         setCurrentSeason(getCurrentSeason());
         handlePlantLifeCycle();
@@ -501,7 +511,7 @@ const PlantScreen = () => {
         intervalRef.current = null;
       }
     };
-  }, [pathname, isTimerActive, waterLevel, nutrientLevel]);
+  }, [pathname, isTimerActive, waterLevel, nutrientLevel, plantHealth]);
 
   const resetBackgroundSound = () => {
     if (normalSound1) {
@@ -604,14 +614,10 @@ const PlantScreen = () => {
       }
     }
 
-    // Check plant death
+    // Low health no longer ends the game. It slows growth until care improves,
+    // giving players time to recover instead of being forced to a game-over screen.
     if (plantHealth <= 0) {
-      setIsDead(true);
-      setIsTimerActive(false);
-      resetBackgroundSound();
-      // setTimeout(() => {
-      router.replace({ pathname: "/(screens)/gameOver", params: { name } });
-      // }, 50);
+      setPlantDamaged(true);
     }
     // harvest time
     if (timeLeft <= 2 || getPlantStage() > 3) {
@@ -1298,9 +1304,6 @@ const PlantScreen = () => {
             )}
             <Text className="text-yellow-600 text-lg">{showGiftMessage}</Text>
             <Text className="text-white text-3xl font-bold">{score}</Text>
-            <Text className="bg-green-900/70 text-white text-xs text-center rounded-2xl px-4 py-2 mt-2 mx-4">
-              {getSessionTip()}
-            </Text>
             <View className="bg-black/35 rounded-2xl px-4 py-2 mt-2 mx-4">
               <Text className="text-white text-center font-pbold">
                 {plant.emoji || "🌱"} {plant.diplayName} • {plant.gardenType}
@@ -1497,6 +1500,15 @@ const PlantScreen = () => {
                 ))}
               </View>
             )}
+          </View>
+
+          <View className="absolute top-28 right-3 w-[44%] bg-green-950/75 rounded-2xl px-3 py-2 border border-yellow-200/30">
+            <Text className="text-white text-[11px] leading-4 text-center">
+              {getSessionTip()}
+            </Text>
+            <Text className="text-yellow-200 text-[10px] text-center mt-1">
+              Low health slows growth — recover with water, nutrients, and pest care.
+            </Text>
           </View>
 
           {/* Tool buttons */}

@@ -5,6 +5,7 @@ import { router, useFocusEffect } from "expo-router";
 import BackgroundImage from "@/components/BackgroundImage";
 import HeaderNavigation from "@/components/HeaderNavigation";
 import { icons, images } from "@/constants";
+import { useLoginContext } from "@/context/LoginProvider";
 import {
   FarmCycleRecord,
   getFarmCycleRecords,
@@ -28,6 +29,7 @@ const PerformanceCard = ({ label, value, emoji }: { label: string; value: string
 );
 
 export default function FarmPerformance() {
+  const { user } = useLoginContext();
   const [records, setRecords] = useState<FarmCycleRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -37,7 +39,7 @@ export default function FarmPerformance() {
       const load = async () => {
         setLoading(true);
         try {
-          const data = await getFarmCycleRecords();
+          const data = await getFarmCycleRecords(user);
           if (mounted) setRecords(data);
         } finally {
           if (mounted) setLoading(false);
@@ -47,7 +49,7 @@ export default function FarmPerformance() {
       return () => {
         mounted = false;
       };
-    }, [])
+    }, [user])
   );
 
   const summary = summarizeFarmCycleRecords(records);

@@ -226,7 +226,7 @@ const Harvest = () => {
         nutritionImpact: plant.nutrition?.impact || "Adds fresh produce variety to household meals.",
         offlineGarden: offlineGarden || undefined,
         offlineComparison,
-      }).catch(() => {});
+      }, user).catch(() => {});
 
       // Daily challenge: if you played today's featured crop, submit the
       // score to the daily leaderboard (best score per day is kept).

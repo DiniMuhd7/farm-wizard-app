@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import {
   InterstitialAd as InterstitialAdModule,
   AdEventType,
+  TestIds,
 } from "react-native-google-mobile-ads";
 
 interface Props {
@@ -11,7 +12,7 @@ interface Props {
 
 const InterstitialAdComponent = ({
   onClose,
-  adUnitId = "ca-app-pub-4516568539037938/4288649621",
+  adUnitId = __DEV__ ? TestIds.INTERSTITIAL : "ca-app-pub-4516568539037938/4288649621",
 }: // adUnitId = TestIds.INTERSTITIAL,
 Props) => {
   useEffect(() => {
@@ -49,7 +50,7 @@ Props) => {
       unsubscribeClosed();
       unsubscribeError();
     };
-  }, []);
+  }, [adUnitId, onClose]);
 
   return null; // No UI needed
 };

@@ -292,25 +292,6 @@ export default Home = () => {
         <Text className="text-white font-psemibold">🎯 Daily Quests & Badges</Text>
       </TouchableOpacity>
 
-      {/* Security monitoring tools */}
-      <View className="w-full px-5 flex-row justify-between mt-3">
-        <TouchableOpacity
-          className="bg-black/30 px-4 py-2 rounded-full flex-1 mr-2"
-          onPress={() => router.push("/(screens)/communicationMonitor")}
-        >
-          <Text className="text-white font-psemibold text-center text-xs">
-            🛡️ Message Shield
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          className="bg-black/30 px-4 py-2 rounded-full flex-1 ml-2"
-          onPress={() => router.push("/(screens)/agentSupervisor")}
-        >
-          <Text className="text-white font-psemibold text-center text-xs">
-            🤖 Agent Guard
-          </Text>
-        </TouchableOpacity>
-      </View>
 
       {/* Watch & Earn is opened from the top-right icon */}
 

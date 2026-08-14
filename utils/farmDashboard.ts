@@ -1,7 +1,14 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
+export type FarmCycleUser = {
+  _id?: string;
+  id?: string;
+  email?: string;
+};
+
 export type FarmCycleRecord = {
   id: string;
+  userKey: string;
   plantName: string;
   displayName: string;
   emoji: string;
@@ -31,27 +38,43 @@ export type FarmCycleRecord = {
 const STORAGE_KEY = "farmCycleDashboardRecords";
 const MAX_RECORDS = 80;
 
+export const getFarmCycleUserKey = (user?: FarmCycleUser | null) => {
+  const raw = user?._id || user?.id || user?.email || "guest";
+  return String(raw).trim().toLowerCase();
+};
+
+const getStorageKey = (user?: FarmCycleUser | null) =>
+  `${STORAGE_KEY}:${getFarmCycleUserKey(user)}`;
+
 export const saveFarmCycleRecord = async (
-  record: Omit<FarmCycleRecord, "id" | "completedAt">
+  record: Omit<FarmCycleRecord, "id" | "completedAt" | "userKey">,
+  user?: FarmCycleUser | null
 ) => {
-  const raw = await AsyncStorage.getItem(STORAGE_KEY);
+  const userKey = getFarmCycleUserKey(user);
+  const storageKey = getStorageKey(user);
+  const raw = await AsyncStorage.getItem(storageKey);
   const records: FarmCycleRecord[] = raw ? JSON.parse(raw) : [];
   const next: FarmCycleRecord = {
     ...record,
-    id: `${record.plantName}-${Date.now()}`,
+    userKey,
+    id: `${userKey}-${record.plantName}-${Date.now()}`,
     completedAt: new Date().toISOString(),
   };
 
   await AsyncStorage.setItem(
-    STORAGE_KEY,
+    storageKey,
     JSON.stringify([next, ...records].slice(0, MAX_RECORDS))
   );
   return next;
 };
 
-export const getFarmCycleRecords = async (): Promise<FarmCycleRecord[]> => {
-  const raw = await AsyncStorage.getItem(STORAGE_KEY);
-  return raw ? JSON.parse(raw) : [];
+export const getFarmCycleRecords = async (
+  user?: FarmCycleUser | null
+): Promise<FarmCycleRecord[]> => {
+  const userKey = getFarmCycleUserKey(user);
+  const raw = await AsyncStorage.getItem(getStorageKey(user));
+  const records: FarmCycleRecord[] = raw ? JSON.parse(raw) : [];
+  return records.filter((record) => record.userKey === userKey);
 };
 
 export const summarizeFarmCycleRecords = (records: FarmCycleRecord[]) => {

@@ -3,9 +3,9 @@ import {
   RewardedAd,
   RewardedAdEventType,
   AdEventType,
+  TestIds,
 } from "react-native-google-mobile-ads";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Notifications from "expo-notifications";
 
 const STORAGE_KEY = "REWARDED_AD_VIEW_COUNT";
 
@@ -18,7 +18,7 @@ interface Props {
 const RewardedAdComponent = ({
   onRewardEarned,
   onClose,
-  adUnitId = "ca-app-pub-4516568539037938/1775609882",
+  adUnitId = __DEV__ ? TestIds.REWARDED : "ca-app-pub-4516568539037938/1775609882",
 }: // adUnitId = TestIds.REWARDED,
 Props) => {
   useEffect(() => {
@@ -72,7 +72,7 @@ Props) => {
       unsubscribeError();
       unsubscribeReward();
     };
-  }, []);
+  }, [adUnitId, onClose, onRewardEarned]);
 
   return null;
 };

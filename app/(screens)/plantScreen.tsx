@@ -56,6 +56,8 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const GAME_DURATION = 12 * 60;
 const TEN_MINUTES = GAME_DURATION; // legacy alias used throughout this file
 const PHASE_DURATION = GAME_DURATION / 4; // one growth stage
+const TOOL_ICON_SIZE = 44;
+const ACTION_ICON_SIZE = 60;
 
 const SEASONS = ["normal", "dry", "raining"] as const;
 type SeasonType = (typeof SEASONS)[number];
@@ -1735,7 +1737,11 @@ const ToolIcon = ({
     disabled={disabled}
     className="relative w-14 h-14 rounded-full bg-cream border-2 border-[#e6d6aa] flex items-center justify-center shadow-md"
   >
-    <Image source={icon} className="w-10 h-10" resizeMode="contain" />
+    <Image
+      source={icon}
+      style={styles.toolIconImage}
+      resizeMode="contain"
+    />
 
     <Text className="absolute -bottom-1 -right-1 bg-[#9D863B] text-white text-[10px] font-bold w-6 h-5 rounded-full flex text-center items-center justify-center shadow">
       {itemQty}
@@ -1753,7 +1759,11 @@ const ActionButton = ({
   onPress: () => void;
 }) => (
   <TouchableOpacity className="items-center" onPress={onPress}>
-    <Image source={icon} className="w-14 h-14" resizeMode="contain" />
+    <Image
+      source={icon}
+      style={styles.actionIconImage}
+      resizeMode="contain"
+    />
     {label !== "" && (
       <Text className="text-white text-xs font-bold mt-1">{label}</Text>
     )}
@@ -1769,6 +1779,14 @@ const styles = StyleSheet.create({
   background: {
     flex: 1,
     justifyContent: "center",
+  },
+  toolIconImage: {
+    width: TOOL_ICON_SIZE,
+    height: TOOL_ICON_SIZE,
+  },
+  actionIconImage: {
+    width: ACTION_ICON_SIZE,
+    height: ACTION_ICON_SIZE,
   },
   rain: {
     position: "absolute",

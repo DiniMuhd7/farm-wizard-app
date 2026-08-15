@@ -48,7 +48,6 @@ import BannerAdComponent from "@/utils/BannerAdComponent";
 import { schedulePausedSessionReminder } from "@/utils/notifications";
 import { recordEvent } from "@/utils/engagement";
 import { canShowInterstitial, markInterstitialShown } from "@/utils/adFrequency";
-import { getTrendTipForSession } from "@/constants/gardenTrends";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 // Long grocery-garden session: each phase maps to real crop stages while

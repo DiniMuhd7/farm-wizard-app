@@ -16,11 +16,13 @@ import { canShowRewardedAd } from "@/utils/adLimit";
 import {
   cancelPausedSessionReminder,
   notifySessionComplete,
+  scheduleSmartEngagementNudge,
 } from "@/utils/notifications";
 import { recordEvent } from "@/utils/engagement";
 import { submitDailyScore } from "@/services/rewardsApi";
 import { dailyCrop } from "@/utils/dailyChallenge";
 import { saveFarmCycleRecord } from "@/utils/farmDashboard";
+import { addToInventory } from "@/services/userInventory";
 
 const REWARD_ADS_VIEW_LIMIT = 3;
 const AD_BONUS_POINTS = 50;
@@ -81,6 +83,31 @@ const Harvest = () => {
   // useful for planning without making rewards the primary gameplay loop.
   const totalSocre =
     Number(score) + bonus + 100 * Number(userLevel);
+
+
+  const calculateCareRewards = () => {
+    const health = Number(plantHealth) || 0;
+    const scoreValue = Number(score) || 0;
+    const levelValue = Number(userLevel) || 1;
+    const excellenceBonus = health >= 90 ? 1 : 0;
+    const recoveryBonus = health < 60 ? 1 : 0;
+
+    return {
+      Water: Math.max(1, Math.min(5, Math.floor(health / 30) + recoveryBonus)),
+      Fertilizer: Math.max(1, Math.min(4, Math.floor(scoreValue / 75) + excellenceBonus)),
+      Pesticide: Math.max(1, Math.min(4, Math.floor(levelValue / 2) + (health >= 75 ? 1 : 0))),
+    };
+  };
+
+  const grantCareRewards = async () => {
+    const token = await AsyncStorage.getItem("token");
+    if (!token) return;
+    const rewards = calculateCareRewards();
+    await Promise.all(
+      Object.entries(rewards).map(([item, qty]) => addToInventory(token, item, qty))
+    );
+    return rewards;
+  };
 
   const updateLevel = async () => {
     if (!plant || !level || !score) {
@@ -204,6 +231,12 @@ const Harvest = () => {
       // Session is done: clear the paused-session reminder and celebrate
       cancelPausedSessionReminder();
       notifySessionComplete(Number(Number(totalSocre).toFixed(2)));
+      grantCareRewards().catch(() => {});
+      scheduleSmartEngagementNudge({
+        averageHealth: Number(plantHealth),
+        harvests: 1,
+        gardenPoints: Number(totalSocre),
+      });
 
       // Engagement tracking: quests & achievements
       recordEvent("session_played");
@@ -277,6 +310,9 @@ const Harvest = () => {
         </Text>
         <Text className="text-center text-xl p-4 my-2 text-white">
           {t("messages.harvest")}
+        </Text>
+        <Text className="text-center text-sm px-4 text-yellow-100">
+          Performance care rewards: 💧 {calculateCareRewards().Water} water • 🧪 {calculateCareRewards().Fertilizer} fertilizer • 🛡️ {calculateCareRewards().Pesticide} pesticide
         </Text>
         <View className="bg-black/25 rounded-2xl px-4 py-3 w-[88%]">
           <Text className="text-white text-center font-pbold">

@@ -289,9 +289,6 @@ const SelectSeed = () => {
           ))}
         </View> */}
 
-          <Text style={{ color: "#fff", textAlign: "center", marginTop: 4 }}>
-            Selected garden bed: {selectedIndexes.map((i) => plantSeeds[i]?.emoji || "🌱").join(" ")}
-          </Text>
           <Text style={{ color: "#FDEFC0", textAlign: "center", fontSize: 12, marginTop: 4 }}>
             Farmer Lv.{farmerLevel} • {gardenPoints.toLocaleString()} Garden Points • {
               plantSeeds.filter(isSeedUnlocked).length

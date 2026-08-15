@@ -45,9 +45,13 @@ import { playSound } from "@/utils/audio";
 import { API_BASE } from "@/config/client";
 import analytics from "@react-native-firebase/analytics";
 import BannerAdComponent from "@/utils/BannerAdComponent";
-import { schedulePausedSessionReminder } from "@/utils/notifications";
+import {
+  scheduleGameplayStatusNotification,
+  schedulePausedSessionReminder,
+} from "@/utils/notifications";
 import { recordEvent } from "@/utils/engagement";
 import { canShowInterstitial, markInterstitialShown } from "@/utils/adFrequency";
+import { getTrendTipForSession } from "@/constants/gardenTrends";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 // Long grocery-garden session: each phase maps to real crop stages while
@@ -404,21 +408,26 @@ const PlantScreen = () => {
 
   const publishGameplayWidgetState = async () => {
     if (!plant?.name) return;
+    const widgetState = {
+      plantName: plant.diplayName || plant.name,
+      emoji: plant.emoji || "🌱",
+      stageName: currentStagePlan?.name || "Growing",
+      realDaysElapsed,
+      plantCycleDays,
+      health: Math.round(plantHealth),
+      water: Math.round(waterLevel),
+      nutrients: Math.round(nutrientLevel),
+      score,
+      isActive: isTimerActive,
+      advice: getSessionTip(),
+      updatedAt: new Date().toISOString(),
+    };
+
     await AsyncStorage.setItem(
       GAMEPLAY_WIDGET_STATE_KEY,
-      JSON.stringify({
-        plantName: plant.diplayName || plant.name,
-        emoji: plant.emoji || "🌱",
-        stageName: currentStagePlan?.name || "Growing",
-        realDaysElapsed,
-        plantCycleDays,
-        health: Math.round(plantHealth),
-        water: Math.round(waterLevel),
-        nutrients: Math.round(nutrientLevel),
-        score,
-        updatedAt: new Date().toISOString(),
-      })
+      JSON.stringify(widgetState)
     );
+    await scheduleGameplayStatusNotification(widgetState);
   };
 
   const saveGameState = async () => {

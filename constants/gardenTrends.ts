@@ -50,3 +50,32 @@ export const getTrendTipForSession = (context: {
   }
   return householdGardenTrends.find((trend) => trend.id === "companion-planting")!;
 };
+
+export const getPersonalizedGardenTrends = (context: {
+  averageHealth: number;
+  harvests: number;
+  averageOfflineHealthGap?: number;
+  simultaneousPlantings?: number;
+}) => {
+  const base = [...householdGardenTrends];
+  const scored = base.map((trend) => {
+    let score = 50;
+    if (trend.id === "water-resilience" && context.averageHealth < 70) score += 35;
+    if (trend.id === "no-till-mulch" && context.averageHealth < 80) score += 25;
+    if (trend.id === "companion-planting" && (context.simultaneousPlantings || 0) >= Math.max(2, context.harvests)) score += 30;
+    if (trend.id === "soil-safety" && (context.averageOfflineHealthGap || 0) < 0) score += 30;
+    if (trend.id === "slug-pest-watch" && context.averageHealth < 60) score += 25;
+    if (context.harvests === 0) score += trend.id === "water-resilience" ? 20 : 0;
+
+    return {
+      ...trend,
+      matchScore: Math.min(99, score),
+      liveReason:
+        context.harvests > 0
+          ? `Matched to your ${context.harvests} harvests, ${context.averageHealth}% average health, and ${context.simultaneousPlantings || 0} crop placements.`
+          : "Starter recommendation until your first harvest creates live performance data.",
+    };
+  });
+
+  return scored.sort((a, b) => b.matchScore - a.matchScore);
+};

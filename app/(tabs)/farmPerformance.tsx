@@ -11,7 +11,7 @@ import {
   getFarmCycleRecords,
   summarizeFarmCycleRecords,
 } from "@/utils/farmDashboard";
-import { householdGardenTrends } from "@/constants/gardenTrends";
+import { getPersonalizedGardenTrends } from "@/constants/gardenTrends";
 
 const healthLabel = (health: number) => {
   if (health >= 90) return "Excellent";
@@ -60,6 +60,10 @@ export default function FarmPerformance() {
   const averageCycle = summary.harvests
     ? Math.round(summary.groceryDaysPlanned / summary.harvests)
     : 0;
+  const personalizedTrends = getPersonalizedGardenTrends(summary);
+  const consistency = summary.harvests
+    ? Math.max(0, Math.min(100, 100 - Math.abs(summary.averageOfflineHealthGap)))
+    : 0;
 
   return (
     <SafeAreaView className="flex-1 bg-green-200">
@@ -100,6 +104,8 @@ export default function FarmPerformance() {
             <PerformanceCard label="Average crop cycle" value={`${averageCycle}d`} emoji="🧭" />
             <PerformanceCard label="Plants simulated" value={`${summary.simultaneousPlantings}`} emoji="🪴" />
             <PerformanceCard label="Avg offline gap" value={`${summary.averageOfflineHealthGap >= 0 ? "+" : ""}${summary.averageOfflineHealthGap}%`} emoji="⚖️" />
+            <PerformanceCard label="Care consistency" value={`${consistency}%`} emoji="🎯" />
+            <PerformanceCard label="Total points" value={`${Math.round(summary.totalPoints).toLocaleString()}`} emoji="✨" />
           </View>
 
           <View className="bg-green-950/70 rounded-3xl p-4 mb-4 border border-white/10">
@@ -117,7 +123,7 @@ export default function FarmPerformance() {
             showsHorizontalScrollIndicator={false}
             className="mb-4"
           >
-            {householdGardenTrends.map((trend) => (
+            {personalizedTrends.map((trend) => (
               <View
                 key={trend.id}
                 className="bg-black/30 rounded-2xl p-3 mr-3"
@@ -127,6 +133,9 @@ export default function FarmPerformance() {
                 <Text className="text-white font-pbold mt-1">{trend.title}</Text>
                 <Text className="text-white/75 text-xs mt-1 leading-4">
                   {trend.tip}
+                </Text>
+                <Text className="text-green-100 text-xs mt-2">
+                  Live fit: {trend.matchScore}% • {trend.liveReason}
                 </Text>
               </View>
             ))}

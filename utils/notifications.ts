@@ -16,14 +16,18 @@ Notifications.setNotificationHandler({
 
 const COME_BACK_ID = "come-back-reminder";
 const PAUSED_SESSION_ID = "paused-session-reminder";
+const GAMEPLAY_STATUS_ID = "gameplay-status-widget";
+const LAST_ENGAGEMENT_KEY = "last-engagement-nudge";
 const LAST_NOTIFIED_KEY = "last-notified-app-notification";
+let lastGameplayStatusAt = 0;
 
 export const initNotifications = async () => {
   try {
     if (Platform.OS === "android") {
       await Notifications.setNotificationChannelAsync("default", {
         name: "Farm Wizard",
-        importance: Notifications.AndroidImportance.DEFAULT,
+        importance: Notifications.AndroidImportance.HIGH,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       });
     }
     const { status } = await Notifications.getPermissionsAsync();
@@ -163,5 +167,76 @@ export const notifyNewAppNotifications = async (notifications: any[]) => {
     });
   } catch (e) {
     console.warn("Failed to mirror app notification:", e);
+  }
+};
+
+
+type GameplayStatus = {
+  plantName: string;
+  emoji?: string;
+  stageName?: string;
+  health: number;
+  water: number;
+  nutrients: number;
+  score?: number;
+  isActive?: boolean;
+};
+
+export const scheduleGameplayStatusNotification = async (status: GameplayStatus) => {
+  try {
+    if (!status?.plantName || status.isActive === false) {
+      await Notifications.dismissNotificationAsync(GAMEPLAY_STATUS_ID).catch(() => {});
+      return;
+    }
+
+    const needsCare = status.health < 55 || status.water < 35 || status.nutrients < 35;
+    const now = Date.now();
+    if (!needsCare && now - lastGameplayStatusAt < 60 * 1000) return;
+    lastGameplayStatusAt = now;
+    const body = needsCare
+      ? `Health ${status.health}% • Water ${status.water}% • Nutrients ${status.nutrients}%. Tap to rescue your crop.`
+      : `Stage: ${status.stageName || "Growing"} • Health ${status.health}% • ${status.score || 0} points.`;
+
+    await Notifications.dismissNotificationAsync(GAMEPLAY_STATUS_ID).catch(() => {});
+    await Notifications.scheduleNotificationAsync({
+      identifier: GAMEPLAY_STATUS_ID,
+      content: {
+        title: `${status.emoji || "🌱"} ${status.plantName} live garden`,
+        body,
+        sticky: true,
+        autoDismiss: false,
+        data: { screen: "plantScreen", type: "gameplay-status" },
+      },
+      trigger: null,
+    });
+  } catch (e) {
+    console.warn("Failed to update gameplay status notification:", e);
+  }
+};
+
+export const scheduleSmartEngagementNudge = async (context?: {
+  averageHealth?: number;
+  harvests?: number;
+  gardenPoints?: number;
+}) => {
+  try {
+    const now = Date.now();
+    const last = Number(await AsyncStorage.getItem(LAST_ENGAGEMENT_KEY));
+    if (last && now - last < 8 * 60 * 60 * 1000) return;
+
+    const title = context?.averageHealth && context.averageHealth >= 80
+      ? "🌟 Your garden is trending up"
+      : "🌿 A quick garden check?";
+    const body = context?.harvests
+      ? `Your average harvest health is ${context.averageHealth || 0}%. Plant again now for smarter rewards and upgrades.`
+      : "Start a crop session to unlock personalized rewards, care tips, and performance trends.";
+
+    await AsyncStorage.setItem(LAST_ENGAGEMENT_KEY, String(now));
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body, data: { screen: "home", type: "engagement" } },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 4 * 60 * 60 },
+    });
+  } catch (e) {
+    console.warn("Failed to schedule engagement nudge:", e);
   }
 };

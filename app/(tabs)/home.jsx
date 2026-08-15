@@ -15,7 +15,7 @@ import { playSound } from "../../utils/audio";
 import { Audio } from "expo-av";
 import { API_BASE } from "@/config/client";
 import { getUser } from "@/services/user";
-import { notifyNewAppNotifications, registerPushToken } from "@/utils/notifications";
+import { notifyNewAppNotifications, registerPushToken, scheduleSmartEngagementNudge } from "@/utils/notifications";
 import { getIdle, collectIdle } from "@/services/rewardsApi";
 const { height } = Dimensions.get("window");
 import analytics from "@react-native-firebase/analytics";
@@ -96,6 +96,7 @@ export default Home = () => {
         const json = await res.json();
         setNotifications(json.notifications);
         notifyNewAppNotifications(json.notifications);
+        scheduleSmartEngagementNudge({ harvests: 0 });
       } catch (err) {
         console.error("notifcations fetch error:", err);
       } finally {

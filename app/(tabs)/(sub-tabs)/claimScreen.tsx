@@ -39,22 +39,16 @@ type Provider = {
 const providers = {
   "Garden Grants": [
     {
-      name: "Seed swap",
+      name: "Crypto",
       icon: undefined,
-      emoji: "🌱",
-      bg: "bg-green-600",
-    },
-    {
-      name: "Compost kit",
-      icon: undefined,
-      emoji: "🪱",
-      bg: "bg-amber-700",
-    },
-    {
-      name: "Garden club",
-      icon: undefined,
-      emoji: "🏡",
+      emoji: "₿",
       bg: "bg-emerald-700",
+    },
+    {
+      name: "PayPal",
+      icon: undefined,
+      emoji: "💳",
+      bg: "bg-blue-600",
     },
   ],
   Airtime: [
@@ -182,6 +176,15 @@ const ClaimScreen = () => {
     setForm({ ...form, phoneNo: "" });
   };
 
+  const handleGardenProviderSelect = (provider: Provider) => {
+    setSelectedProvider(provider);
+    setForm({
+      ...form,
+      phoneNo: "",
+      network: provider.name === "PayPal" ? "PayPal" : "",
+    });
+  };
+
   const submitWithdrawal = async () => {
     const usdConversion = (Number(user?.score * 0.01) / 1000).toFixed(8);
 
@@ -205,6 +208,10 @@ const ClaimScreen = () => {
       !form.phoneNo
     ) {
       Alert.alert("Error", "Please fill in all fields");
+      return;
+    }
+    if (type === "Garden Grants" && provider === "Crypto" && !form.network) {
+      Alert.alert("Error", "Please enter the crypto network type");
       return;
     }
 
@@ -311,10 +318,8 @@ const ClaimScreen = () => {
   const isEligible = usdValue >= MIN_USD;
   const progressPct = Math.min(100, (usdValue / MIN_USD) * 100);
 
-  // The "Other" provider receives via phone number, with the network field
-  // being an optional bank/app name rather than a garden reward option.
-  const isOther = selectedProvider?.name === "Other";
-  const isPhoneProvider = isOther;
+  const isCryptoProvider = selectedProvider?.name === "Crypto";
+  const isPaypalProvider = selectedProvider?.name === "PayPal";
 
   return (
     <View className="flex-1 bg-green-200 items-center justify-start relative">
@@ -372,7 +377,7 @@ const ClaimScreen = () => {
           <ScrollView
             className="w-full px-4"
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: 24 }}
+            contentContainerStyle={{ paddingBottom: 16 }}
           >
             {/* How garden grant claims work */}
             <View className="bg-black/30 rounded-2xl p-4 my-3">
@@ -382,8 +387,8 @@ const ClaimScreen = () => {
               {[
                 "Play games to earn WizPoints.",
                 `Reach ${MIN_WIZ.toLocaleString()} WizPoints ($${MIN_USD}) to become eligible to claim.`,
-                "Choose where to receive your garden rewards (Telegram or Garden club).",
-                "Enter your mailing/contact details and the network (e.g. seed preference, ZIP code).",
+                "Choose crypto or PayPal as your garden reward receive method.",
+                "For crypto, enter your wallet address and network type; for PayPal, enter your email address.",
                 "Submit your claim — our team verifies it, then prepares the garden support reward.",
               ].map((step, i) => (
                 <View key={i} className="flex-row mb-1.5">
@@ -411,7 +416,7 @@ const ClaimScreen = () => {
               {providers[activeTab].map((provider, index) => (
                 <TouchableOpacity
                   key={index}
-                  onPress={() => setSelectedProvider(provider)}
+                  onPress={() => handleGardenProviderSelect(provider)}
                   style={{ width: "48%" }}
                   className={`items-center p-4 mb-3 rounded-2xl ${provider.bg} ${
                     selectedProvider?.name === provider.name
@@ -435,43 +440,36 @@ const ClaimScreen = () => {
               ))}
             </View>
 
-            {/* Step 2: contact / phone details */}
+            {/* Step 2: payout details */}
             <Text className="text-white font-pbold text-base mb-1">
-              2. Enter your {isPhoneProvider ? "payout details" : "garden reward details"}
+              2. Enter your {isPaypalProvider
+                ? "PayPal email address"
+                : "crypto wallet details"}
             </Text>
             <FormField
               type="text"
               placeholder={
-                isPhoneProvider
-                  ? "Enter your phone number"
-                  : "Paste your mailing/contact details"
+                isPaypalProvider
+                  ? "Enter your PayPal email address"
+                  : "Paste your wallet address"
               }
-              title={isPhoneProvider ? "Phone number" : "Mailing/contact details"}
+              title={isPaypalProvider ? "PayPal email" : "Wallet address"}
               value={form.phoneNo}
               handleChangeText={(e: any) => setForm({ ...form, phoneNo: e })}
               otherStyles="my-2"
             />
-            <FormField
-              type="text"
-              placeholder={
-                isOther
-                  ? "e.g. your bank or app name (Optional)"
-                  : isPhoneProvider
-                  ? "Optional"
-                  : "e.g. seed preference, ZIP code, ERC20"
-              }
-              title={
-                isOther
-                  ? "Bank / App name (Optional)"
-                  : isPhoneProvider
-                  ? "Network (Optional)"
-                  : "Network"
-              }
-              value={form.network}
-              handleChangeText={(e: any) => setForm({ ...form, network: e })}
-              otherStyles="mb-2"
-            />
-
+            {isCryptoProvider && (
+              <FormField
+                type="text"
+                placeholder="e.g. USDT TRC20, USDC ERC20, Bitcoin"
+                title="Network type"
+                value={form.network}
+                handleChangeText={(e: any) => setForm({ ...form, network: e })}
+                otherStyles="mb-2"
+              />
+            )}
+          </ScrollView>
+          <View className="w-full px-4 pt-2 pb-24 bg-transparent">
             <CustomButton
               title={isEligible ? "Claim my garden rewards" : "Keep playing to unlock"}
               handlePress={submitWithdrawal}
@@ -479,7 +477,7 @@ const ClaimScreen = () => {
               textStyles={"font-pbold text-white"}
               isLoading={isSubmitting}
             />
-          </ScrollView>
+          </View>
         </KeyboardAvoidingView>
       )}
 

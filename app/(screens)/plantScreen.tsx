@@ -58,6 +58,8 @@ const PHASE_DURATION = GAME_DURATION / 4; // one growth stage
 const TOOL_ICON_SIZE = 44;
 const ACTION_ICON_SIZE = 60;
 const LOW_INVENTORY_GIFT_QTY = 2;
+const PLANT_TIP_VISIBLE_MS = 6500;
+const GAMEPLAY_WIDGET_STATE_KEY = "gameplayWidgetState";
 const CARE_RECOVERY = {
   fertilizer: 12,
   pesticide: 14,
@@ -201,6 +203,9 @@ const PlantScreen = () => {
   const [pauseModal, setPauseModal] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [randomNormalSound, setRandomNormalSound] = useState(1);
+  const [showPlantTipOverlay, setShowPlantTipOverlay] = useState(true);
+  const appStateRef = useRef(AppState.currentState);
+  const backgroundedAtRef = useRef<number | null>(null);
 
   const fetchUserPlantLevelData = async (): Promise<void> => {
     setLoading(true);
@@ -310,6 +315,22 @@ const PlantScreen = () => {
   const plantCycleDays = plant?.cycleDays || 0;
   const currentStagePlan = plantStagePlan[getPlantStage()] || plantStagePlan[0];
   const emojiPlantSize = 52 + getPlantStage() * 22;
+  const getSessionTip = () => {
+    const trendTip = getTrendTipForSession({
+      currentSeason,
+      waterLevel,
+      nutrientLevel,
+      hasThreat: Boolean(activeThreat && !activeThreat.resolved),
+    });
+    if (activeThreat && !activeThreat.resolved) {
+      return activeThreat.type === "disease"
+        ? "🐛 Pest spotted: spray quickly before health drops."
+        : "⛈️ Storm risk: protect tender stems and pause extra watering.";
+    }
+    if (waterLevel < 25) return "💧 Dry soil: water soon or growth will slow.";
+    if (nutrientLevel < 25) return "🪱 Low nutrients: fertilize before health drops.";
+    return `${trendTip.emoji} ${trendTip.title}: ${trendTip.tip}`;
+  };
   const realDaysElapsed = Math.min(
     plantCycleDays,
     Math.round(((TEN_MINUTES - timeLeft) / TEN_MINUTES) * plantCycleDays)
@@ -380,6 +401,25 @@ const PlantScreen = () => {
       if (s && i + 1 !== next) s.stopAsync().catch(() => {});
     });
   }, [currentSeason]);
+
+  const publishGameplayWidgetState = async () => {
+    if (!plant?.name) return;
+    await AsyncStorage.setItem(
+      GAMEPLAY_WIDGET_STATE_KEY,
+      JSON.stringify({
+        plantName: plant.diplayName || plant.name,
+        emoji: plant.emoji || "🌱",
+        stageName: currentStagePlan?.name || "Growing",
+        realDaysElapsed,
+        plantCycleDays,
+        health: Math.round(plantHealth),
+        water: Math.round(waterLevel),
+        nutrients: Math.round(nutrientLevel),
+        score,
+        updatedAt: new Date().toISOString(),
+      })
+    );
+  };
 
   const saveGameState = async () => {
     const token = await AsyncStorage.getItem("token");
@@ -525,6 +565,56 @@ const PlantScreen = () => {
     }
   };
 
+  useEffect(() => {
+    setShowPlantTipOverlay(true);
+    const timer = setTimeout(() => {
+      setShowPlantTipOverlay(false);
+    }, PLANT_TIP_VISIBLE_MS);
+
+    return () => clearTimeout(timer);
+  }, [growthCycle.stage]);
+
+  useEffect(() => {
+    publishGameplayWidgetState().catch(() => {});
+  }, [
+    realDaysElapsed,
+    plantHealth,
+    waterLevel,
+    nutrientLevel,
+    score,
+    currentStagePlan?.name,
+  ]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextAppState) => {
+      const wasActive = appStateRef.current === "active";
+      const isReturningToActive =
+        appStateRef.current.match(/inactive|background/) && nextAppState === "active";
+
+      if (wasActive && nextAppState.match(/inactive|background/)) {
+        backgroundedAtRef.current = Date.now();
+        publishGameplayWidgetState().catch(() => {});
+        if (isTimerActive) saveGameState();
+      }
+
+      if (isReturningToActive && backgroundedAtRef.current && isTimerActive) {
+        const elapsedSeconds = Math.floor(
+          (Date.now() - backgroundedAtRef.current) / 1000
+        );
+        if (elapsedSeconds > 0) {
+          setTimeLeft((prev) => Math.max(0, prev - elapsedSeconds));
+          setWaterLevel((prev) => Math.max(0, prev - elapsedSeconds * 0.2));
+          setNutrientLevel((prev) => Math.max(0, prev - elapsedSeconds * 0.15));
+        }
+        backgroundedAtRef.current = null;
+      }
+
+      appStateRef.current = nextAppState;
+    });
+
+    return () => subscription.remove();
+  }, [isTimerActive, saveGameState]);
+
   const handlePlantLifeCycle = () => {
     const now = Date.now();
 
@@ -532,8 +622,8 @@ const PlantScreen = () => {
     // Dry spells mainly reduce water, rain can leach nutrients, and normal
     // weather changes slowly enough to support longer crop cycles.
     const waterDecay =
-      currentSeason === "dry" ? 1.1 : currentSeason === "normal" ? 0.45 : 0.15;
-    const nutrientDecay = currentSeason === "raining" ? 0.75 : 0.35;
+      currentSeason === "dry" ? 1.35 : currentSeason === "normal" ? 0.65 : 0.25;
+    const nutrientDecay = currentSeason === "raining" ? 0.95 : 0.5;
 
     setWaterLevel((prev) => Math.max(0, prev - waterDecay));
     setNutrientLevel((prev) => Math.max(0, prev - nutrientDecay));
@@ -1035,7 +1125,7 @@ const PlantScreen = () => {
     });
   };
   const triggerFertilizer = async () => {
-    if (nutrientLevel > 50) return;
+    if (nutrientLevel > 60) return;
     setIsThrottledF(true); // Disable further click
     setTimeout(() => {
       setIsThrottledF(false);
@@ -1083,7 +1173,7 @@ const PlantScreen = () => {
     });
   };
   const triggerWater = async () => {
-    if (waterLevel > 40) return;
+    if (waterLevel > 60) return;
     setIsThrottledW(true); // Disable further click
     setTimeout(() => {
       setIsThrottledW(false);
@@ -1316,17 +1406,22 @@ const PlantScreen = () => {
             )}
             <Text className="text-yellow-600 text-lg">{showGiftMessage}</Text>
             <Text className="text-white text-3xl font-bold">{score}</Text>
-            <View className="bg-black/35 rounded-2xl px-4 py-2 mt-2 mx-4">
-              <Text className="text-white text-center font-pbold">
-                {plant.emoji || "🌱"} {plant.diplayName} • {plant.gardenType}
-              </Text>
-              <Text className="text-yellow-200 text-center text-xs mt-1">
-                Real cycle: day {realDaysElapsed} of {plantCycleDays} • {currentStagePlan?.name}
-              </Text>
-              <Text className="text-white/80 text-center text-xs mt-1">
-                Spacing tip: {plant.spacing}
-              </Text>
-            </View>
+            {showPlantTipOverlay && (
+              <View className="bg-black/35 rounded-2xl px-4 py-2 mt-2 mx-4">
+                <Text className="text-white text-center font-pbold">
+                  {plant.emoji || "🌱"} {plant.diplayName} • {plant.gardenType}
+                </Text>
+                <Text className="text-yellow-100 text-center text-xs mt-1">
+                  {getSessionTip()}
+                </Text>
+                <Text className="text-yellow-200 text-center text-xs mt-1">
+                  Real cycle: day {realDaysElapsed} of {plantCycleDays} • {currentStagePlan?.name}
+                </Text>
+                <Text className="text-white/80 text-center text-xs mt-1">
+                  Spacing tip: {plant.spacing}
+                </Text>
+              </View>
+            )}
             {companionPlants.length > 0 && (
               <View className="bg-green-950/65 rounded-2xl px-3 py-2 mt-2 mx-4">
                 <Text className="text-white text-xs text-center font-pbold">

@@ -21,7 +21,7 @@ const openLifeGate = () => Linking.openURL(LIFEGATE_URL).catch(() => {});
 
 // In-house fallback banner shown whenever AdMob has no ad to serve.
 // Farm Wizard themed so the fallback feels like part of the garden UI while
-// still being clearly separated as a sponsored health message.
+// still feeling like part of the garden UI when AdMob has no fill.
 const LifeGateBanner = () => (
   <TouchableOpacity
     style={styles.lifeGate}
@@ -34,7 +34,6 @@ const LifeGateBanner = () => (
       <Cross size={23} color="#17351F" strokeWidth={3} />
     </View>
     <View style={styles.lifeGateTextWrap}>
-      <Text style={styles.sponsored}>Sponsored care partner</Text>
       <Text style={styles.lifeGateTitle}>LifeGate Mobile</Text>
       <Text style={styles.lifeGateBody}>
         Healthy gardeners grow healthy gardens — check care options anytime.
@@ -115,13 +114,6 @@ const styles = StyleSheet.create({
   },
   lifeGateTextWrap: {
     flex: 1,
-  },
-  sponsored: {
-    color: "#A7F3D0",
-    fontSize: 10,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.6,
   },
   lifeGateTitle: {
     color: "#FFFFFF",

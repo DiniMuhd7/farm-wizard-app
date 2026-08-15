@@ -48,7 +48,6 @@ import BannerAdComponent from "@/utils/BannerAdComponent";
 import { schedulePausedSessionReminder } from "@/utils/notifications";
 import { recordEvent } from "@/utils/engagement";
 import { canShowInterstitial, markInterstitialShown } from "@/utils/adFrequency";
-import { getTrendTipForSession } from "@/constants/gardenTrends";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 // Long grocery-garden session: each phase maps to real crop stages while
@@ -56,6 +55,14 @@ const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const GAME_DURATION = 12 * 60;
 const TEN_MINUTES = GAME_DURATION; // legacy alias used throughout this file
 const PHASE_DURATION = GAME_DURATION / 4; // one growth stage
+const TOOL_ICON_SIZE = 44;
+const ACTION_ICON_SIZE = 60;
+const LOW_INVENTORY_GIFT_QTY = 2;
+const CARE_RECOVERY = {
+  fertilizer: 12,
+  pesticide: 14,
+  water: 10,
+};
 
 const SEASONS = ["normal", "dry", "raining"] as const;
 type SeasonType = (typeof SEASONS)[number];
@@ -303,24 +310,6 @@ const PlantScreen = () => {
   const plantCycleDays = plant?.cycleDays || 0;
   const currentStagePlan = plantStagePlan[getPlantStage()] || plantStagePlan[0];
   const emojiPlantSize = 52 + getPlantStage() * 22;
-  const getSessionTip = () => {
-    const trendTip = getTrendTipForSession({
-      currentSeason,
-      waterLevel,
-      nutrientLevel,
-      hasThreat: Boolean(activeThreat && !activeThreat.resolved),
-    });
-    if (activeThreat && !activeThreat.resolved) {
-      return activeThreat.type === "disease"
-        ? "🐛 Pest spotted: tap the crop or spray quickly before health drops."
-        : "⛈️ Storm risk: pause extra watering and protect tender stems.";
-    }
-    if (waterLevel < 25) return "💧 Dry soil: water now, then mulch to hold moisture.";
-    if (nutrientLevel < 25) return "🪱 Low nutrients: feed lightly with compost or fertilizer.";
-    if (currentSeason === "dry") return "☀️ Dry spell: check soil more often and shade seedlings.";
-    if (currentSeason === "raining") return "🌧️ Rainy spell: watch for fungus and nutrient leaching.";
-    return `${trendTip.emoji} ${trendTip.title}: ${trendTip.tip}`;
-  };
   const realDaysElapsed = Math.min(
     plantCycleDays,
     Math.round(((TEN_MINUTES - timeLeft) / TEN_MINUTES) * plantCycleDays)
@@ -981,8 +970,13 @@ const PlantScreen = () => {
     return 110;
   };
 
+  const recoverPlantHealth = (amount: number) => {
+    setPlantHealth((health) => Math.min(100, Math.max(1, health) + amount));
+    setPlantDamaged(false);
+  };
+
   const triggerSpray = async () => {
-    if (!activeThreat || activeThreat.resolved) return;
+    if ((!activeThreat || activeThreat.resolved) && plantHealth > 0) return;
     setIsThrottled(true); // Disable further click
     setTimeout(() => {
       setIsThrottled(false);
@@ -992,13 +986,18 @@ const PlantScreen = () => {
 
     // Gifting logic
     // if (currentQty <= 2 && (userLevel === 1 || userLevel === 2)) {
-    if (currentQty <= 2 && (userLevel <= 2 || getPlantStage() >= 2)) {
-      await handleGiftInventoryItem("Pesticide", 10);
-      setShowGiftMessage("You have received 10 pesticide for free");
+    if (currentQty <= 0 && userLevel <= 2) {
+      await handleGiftInventoryItem("Pesticide", LOW_INVENTORY_GIFT_QTY);
+      setShowGiftMessage(
+        `You have received ${LOW_INVENTORY_GIFT_QTY} pesticide for free`
+      );
       setTimeout(() => setShowGiftMessage(""), 4000);
     }
 
-    if (currentQty > 0) {
+    const availablePesticideQty =
+      currentQty > 0 ? currentQty : userLevel <= 2 ? LOW_INVENTORY_GIFT_QTY : 0;
+
+    if (availablePesticideQty > 0) {
       await handleUpdateInventory("Pesticide", 1);
     } else {
       handleLowItem(
@@ -1021,6 +1020,7 @@ const PlantScreen = () => {
       spraySound.replayAsync();
     }
 
+    recoverPlantHealth(CARE_RECOVERY.pesticide);
     gainScore(applyCombo());
     recordEvent("pesticide_used");
     recordEvent("threat_survived");
@@ -1043,13 +1043,18 @@ const PlantScreen = () => {
     const currentQty = userInventory.fertilizerQty;
 
     // Gifting logic
-    if (currentQty <= 2 && (userLevel <= 2 || getPlantStage() >= 2)) {
-      await handleGiftInventoryItem("Fertilizer", 10);
-      setShowGiftMessage("You have received 10 Fertilizer for free");
+    if (currentQty <= 0 && userLevel <= 2) {
+      await handleGiftInventoryItem("Fertilizer", LOW_INVENTORY_GIFT_QTY);
+      setShowGiftMessage(
+        `You have received ${LOW_INVENTORY_GIFT_QTY} Fertilizer for free`
+      );
       setTimeout(() => setShowGiftMessage(""), 4000);
     }
 
-    if (currentQty > 0) {
+    const availableFertilizerQty =
+      currentQty > 0 ? currentQty : userLevel <= 2 ? LOW_INVENTORY_GIFT_QTY : 0;
+
+    if (availableFertilizerQty > 0) {
       await handleUpdateInventory("Fertilizer", 1);
     } else {
       handleLowItem(
@@ -1059,6 +1064,7 @@ const PlantScreen = () => {
     }
 
     setNutrientLevel(100);
+    recoverPlantHealth(CARE_RECOVERY.fertilizer);
     gainScore(applyCombo());
     recordEvent("fertilizer_used");
     setFertilizing(true);
@@ -1086,13 +1092,18 @@ const PlantScreen = () => {
 
     // Gifting logic
     // if (currentQty <= 2 && (userLevel === 1 || userLevel === 2)) {
-    if (currentQty <= 2 && (userLevel <= 2 || getPlantStage() >= 2)) {
-      await handleGiftInventoryItem("Water", 10);
-      setShowGiftMessage("You have received 10 Water for free");
+    if (currentQty <= 0 && userLevel <= 2) {
+      await handleGiftInventoryItem("Water", LOW_INVENTORY_GIFT_QTY);
+      setShowGiftMessage(
+        `You have received ${LOW_INVENTORY_GIFT_QTY} Water for free`
+      );
       setTimeout(() => setShowGiftMessage(""), 4000);
     }
 
-    if (currentQty > 0) {
+    const availableWaterQty =
+      currentQty > 0 ? currentQty : userLevel <= 2 ? LOW_INVENTORY_GIFT_QTY : 0;
+
+    if (availableWaterQty > 0) {
       await handleUpdateInventory("Water", 1);
     } else {
       handleLowItem(
@@ -1102,6 +1113,7 @@ const PlantScreen = () => {
     }
 
     setWaterLevel(100);
+    recoverPlantHealth(CARE_RECOVERY.water);
     gainScore(applyCombo());
     recordEvent("water_used");
     setWatering(true);
@@ -1502,14 +1514,6 @@ const PlantScreen = () => {
             )}
           </View>
 
-          <View className="absolute top-28 right-3 w-[44%] bg-green-950/75 rounded-2xl px-3 py-2 border border-yellow-200/30">
-            <Text className="text-white text-[11px] leading-4 text-center">
-              {getSessionTip()}
-            </Text>
-            <Text className="text-yellow-200 text-[10px] text-center mt-1">
-              Low health slows growth — recover with water, nutrients, and pest care.
-            </Text>
-          </View>
 
           {/* Tool buttons */}
 
@@ -1735,7 +1739,11 @@ const ToolIcon = ({
     disabled={disabled}
     className="relative w-14 h-14 rounded-full bg-cream border-2 border-[#e6d6aa] flex items-center justify-center shadow-md"
   >
-    <Image source={icon} className="w-10 h-10" resizeMode="contain" />
+    <Image
+      source={icon}
+      style={styles.toolIconImage}
+      resizeMode="contain"
+    />
 
     <Text className="absolute -bottom-1 -right-1 bg-[#9D863B] text-white text-[10px] font-bold w-6 h-5 rounded-full flex text-center items-center justify-center shadow">
       {itemQty}
@@ -1753,7 +1761,11 @@ const ActionButton = ({
   onPress: () => void;
 }) => (
   <TouchableOpacity className="items-center" onPress={onPress}>
-    <Image source={icon} className="w-14 h-14" resizeMode="contain" />
+    <Image
+      source={icon}
+      style={styles.actionIconImage}
+      resizeMode="contain"
+    />
     {label !== "" && (
       <Text className="text-white text-xs font-bold mt-1">{label}</Text>
     )}
@@ -1769,6 +1781,14 @@ const styles = StyleSheet.create({
   background: {
     flex: 1,
     justifyContent: "center",
+  },
+  toolIconImage: {
+    width: TOOL_ICON_SIZE,
+    height: TOOL_ICON_SIZE,
+  },
+  actionIconImage: {
+    width: ACTION_ICON_SIZE,
+    height: ACTION_ICON_SIZE,
   },
   rain: {
     position: "absolute",

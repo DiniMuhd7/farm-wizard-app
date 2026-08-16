@@ -309,12 +309,6 @@ const SelectSeed = () => {
               plantSeeds.filter(isSeedUnlocked).length
             }/{plantSeeds.length} seeds unlocked
           </Text>
-          <TouchableOpacity onPress={() => router.push("/(screens)/farm")}>
-            <Text style={{ color: "#fff", textAlign: "center", fontSize: 12, marginTop: 6 }}>
-              Gameplay land: {farmLandLabels[selectedFarmLand] || farmLandLabels["starter-bed"]} • Tap to change
-            </Text>
-          </TouchableOpacity>
-
           <View style={{ width: "100%", backgroundColor: "rgba(0,0,0,0.22)", borderRadius: 16, padding: 12, marginTop: 10 }}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
               <Text style={{ color: "white", fontWeight: "700", flex: 1 }}>Compare with my offline garden</Text>

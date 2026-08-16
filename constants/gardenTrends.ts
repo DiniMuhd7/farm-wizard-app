@@ -34,7 +34,7 @@ export const householdGardenTrends = [
 ];
 
 export const getTrendTipForSession = (context: {
-  currentSeason: "normal" | "dry" | "raining";
+  currentSeason: "normal" | "dry" | "drought" | "famine" | "raining";
   waterLevel: number;
   nutrientLevel: number;
   hasThreat: boolean;
@@ -42,7 +42,7 @@ export const getTrendTipForSession = (context: {
   if (context.hasThreat || context.currentSeason === "raining") {
     return householdGardenTrends.find((trend) => trend.id === "slug-pest-watch")!;
   }
-  if (context.currentSeason === "dry" || context.waterLevel < 30) {
+  if (["dry", "drought", "famine"].includes(context.currentSeason) || context.waterLevel < 30) {
     return householdGardenTrends.find((trend) => trend.id === "water-resilience")!;
   }
   if (context.nutrientLevel < 35) {

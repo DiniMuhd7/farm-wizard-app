@@ -15,6 +15,7 @@ type Item = {
   name: string;
   price: number;
   emoji?: string;
+  bonus?: string;
 };
 
 type Land = {
@@ -29,6 +30,7 @@ type Land = {
 
 const FARM_LAND_KEY = "selectedFarmLand";
 const OWNED_FARM_LANDS_KEY = "ownedFarmLands";
+const OWNED_FARM_DECORATIONS_KEY = "ownedFarmDecorations";
 
 const farmLands: Land[] = [
   {
@@ -143,7 +145,7 @@ const Farm = () => {
       setOwnedLands(nextOwned);
       setBalance((prev) => prev - land.price);
       await persistLand(land.id, nextOwned);
-      Alert.alert("Farm land acquired", `${land.emoji} ${land.name} is now selected for gameplay.`);
+      Alert.alert("Farm land acquired", `${land.emoji} ${land.name} is now selected for gameplay. Bonus active: ${land.bonus}.`);
     } finally {
       setBusy(null);
     }
@@ -160,8 +162,14 @@ const Farm = () => {
       const res = await buyCosmetic(item.id);
       if (res?.success) {
         if (res.userDetails) setUser(res.userDetails);
+        const ownedDecorationsRaw = await AsyncStorage.getItem(OWNED_FARM_DECORATIONS_KEY);
+        const ownedDecorationIds = ownedDecorationsRaw ? JSON.parse(ownedDecorationsRaw) : [];
+        await AsyncStorage.setItem(
+          OWNED_FARM_DECORATIONS_KEY,
+          JSON.stringify(Array.from(new Set([...ownedDecorationIds, item.id])))
+        );
         await load();
-        Alert.alert("Added to your farm", `${item.emoji || ""} ${item.name}`);
+        Alert.alert("Added to your farm", `${item.emoji || ""} ${item.name} now improves gameplay with a small farm morale bonus.`);
       } else {
         Alert.alert("Couldn't buy", res?.message || "Please try again.");
       }
@@ -276,6 +284,9 @@ const Farm = () => {
                   <Text style={{ fontSize: 40 }}>{item.emoji || "🌱"}</Text>
                   <Text className="text-white font-psemibold text-sm mt-1">
                     {item.name}
+                  </Text>
+                  <Text className="text-yellow-100 text-[10px] text-center mt-1">
+                    {item.bonus || "Farm morale bonus: small score and recovery boost"}
                   </Text>
                   {isOwned ? (
                     <View className="bg-green-600 px-4 py-1.5 rounded-full mt-2">

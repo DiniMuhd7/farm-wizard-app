@@ -95,6 +95,34 @@ export const scheduleComeBackReminder = async () => {
   }
 };
 
+export const scheduleGameplayStatusNotification = async (context: {
+  plantName?: string;
+  stageName?: string;
+  health?: number;
+  water?: number;
+  nutrients?: number;
+  advice?: string;
+}) => {
+  try {
+    const now = Date.now();
+    if (now - lastGameplayStatusAt < 30 * 60 * 1000) return;
+    lastGameplayStatusAt = now;
+
+    const plantLabel = context.plantName || "Your plant";
+    const stageLabel = context.stageName ? ` (${context.stageName})` : "";
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: `🌿 ${plantLabel}${stageLabel}`,
+        body: context.advice || `Health ${context.health || 0}% • Water ${context.water || 0}% • Nutrients ${context.nutrients || 0}%`,
+        data: { screen: "plantScreen", type: "gameplay_status" },
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 60 * 60 },
+    });
+  } catch (e) {
+    console.warn("Failed to schedule gameplay status notification:", e);
+  }
+};
+
 // Reminder when the player pauses and exits mid-session.
 export const schedulePausedSessionReminder = async (plantName?: string) => {
   try {

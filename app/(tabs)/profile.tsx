@@ -131,7 +131,7 @@ const Profile = () => {
       <ScrollView
         className="flex-1"
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ alignItems: "center", paddingBottom: 36 }}
+        contentContainerStyle={{ alignItems: "center", paddingBottom: 120 }}
       >
         <Text className="text-white text-2xl font-primary font-bold mt-4 capitalize">
           {t("profile")}
@@ -302,14 +302,16 @@ const Profile = () => {
         <Text className="text-white/90 text-center text-xs mt-1">
           Use this dashboard to compare crop health, real-life cycle length, and harvest timing before planting your next grocery bed.
         </Text>
+      </View>
+      </ScrollView>
+      <View className="absolute left-0 right-0 bottom-20 px-5">
         <TouchableOpacity
-          className="bg-[#E0C145B8] rounded-full px-4 py-2 mt-3"
+          className="bg-[#E0C145] rounded-full px-4 py-3 shadow-lg"
           onPress={() => router.push("/(tabs)/farmPerformance")}
         >
           <Text className="text-white text-center font-pbold">Open full performance report 📊</Text>
         </TouchableOpacity>
       </View>
-      </ScrollView>
     </View>
   );
 };

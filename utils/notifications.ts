@@ -16,6 +16,7 @@ Notifications.setNotificationHandler({
 
 const COME_BACK_ID = "come-back-reminder";
 const PAUSED_SESSION_ID = "paused-session-reminder";
+const LAST_ENGAGEMENT_KEY = "last-engagement-nudge";
 const LAST_NOTIFIED_KEY = "last-notified-app-notification";
 
 export const initNotifications = async () => {
@@ -23,7 +24,8 @@ export const initNotifications = async () => {
     if (Platform.OS === "android") {
       await Notifications.setNotificationChannelAsync("default", {
         name: "Farm Wizard",
-        importance: Notifications.AndroidImportance.DEFAULT,
+        importance: Notifications.AndroidImportance.HIGH,
+        lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
       });
     }
     const { status } = await Notifications.getPermissionsAsync();
@@ -163,5 +165,33 @@ export const notifyNewAppNotifications = async (notifications: any[]) => {
     });
   } catch (e) {
     console.warn("Failed to mirror app notification:", e);
+  }
+};
+
+
+export const scheduleSmartEngagementNudge = async (context?: {
+  averageHealth?: number;
+  harvests?: number;
+  gardenPoints?: number;
+}) => {
+  try {
+    const now = Date.now();
+    const last = Number(await AsyncStorage.getItem(LAST_ENGAGEMENT_KEY));
+    if (last && now - last < 8 * 60 * 60 * 1000) return;
+
+    const title = context?.averageHealth && context.averageHealth >= 80
+      ? "🌟 Your garden is trending up"
+      : "🌿 A quick garden check?";
+    const body = context?.harvests
+      ? `Your average harvest health is ${context.averageHealth || 0}%. Plant again now for smarter rewards and upgrades.`
+      : "Start a crop session to unlock personalized rewards, care tips, and performance trends.";
+
+    await AsyncStorage.setItem(LAST_ENGAGEMENT_KEY, String(now));
+    await Notifications.scheduleNotificationAsync({
+      content: { title, body, data: { screen: "home", type: "engagement" } },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: 4 * 60 * 60 },
+    });
+  } catch (e) {
+    console.warn("Failed to schedule engagement nudge:", e);
   }
 };

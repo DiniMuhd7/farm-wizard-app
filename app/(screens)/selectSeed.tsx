@@ -1,6 +1,6 @@
 import BackgroundImage from "@/components/BackgroundImage";
 import { icons, images } from "@/constants";
-import React, { useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -20,9 +20,17 @@ import { playSound } from "../../utils/audio";
 import { useLoginContext } from "@/context/LoginProvider";
 import BannerAdComponent from "@/utils/BannerAdComponent";
 import { dailyCrop } from "@/utils/dailyChallenge";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width, height } = Dimensions.get("window");
 const TODAY_CROP = dailyCrop();
+const FARM_LAND_KEY = "selectedFarmLand";
+const farmLandLabels: Record<string, string> = {
+  "starter-bed": "🏡 Starter Backyard Bed",
+  "sunny-acre": "🌞 Sunny Market Acre",
+  "rain-barrel-plot": "💧 Rain-Barrel Plot",
+  "orchard-terrace": "🌳 Orchard Terrace",
+};
 
 const SelectSeed = () => {
   const router = useRouter();
@@ -36,6 +44,7 @@ const SelectSeed = () => {
   const [selectedIndex, setSelectedIndex] = useState(0); // Default: first unlocked starter seed
   const [selectedIndexes, setSelectedIndexes] = useState<number[]>([0]);
   const [includeOffline, setIncludeOffline] = useState(false);
+  const [selectedFarmLand, setSelectedFarmLand] = useState("starter-bed");
   const [offlineForm, setOfflineForm] = useState({
     plantName: "",
     health: "80",
@@ -43,6 +52,12 @@ const SelectSeed = () => {
     daysGrowing: "14",
   });
   const fadeAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    AsyncStorage.getItem(FARM_LAND_KEY).then((land) => {
+      if (land) setSelectedFarmLand(land);
+    });
+  }, []);
 
   const plantSeeds = seeds();
   const selectedSeed = plantSeeds[selectedIndex];
@@ -289,14 +304,16 @@ const SelectSeed = () => {
           ))}
         </View> */}
 
-          <Text style={{ color: "#fff", textAlign: "center", marginTop: 4 }}>
-            Selected garden bed: {selectedIndexes.map((i) => plantSeeds[i]?.emoji || "🌱").join(" ")}
-          </Text>
           <Text style={{ color: "#FDEFC0", textAlign: "center", fontSize: 12, marginTop: 4 }}>
             Farmer Lv.{farmerLevel} • {gardenPoints.toLocaleString()} Garden Points • {
               plantSeeds.filter(isSeedUnlocked).length
             }/{plantSeeds.length} seeds unlocked
           </Text>
+          <TouchableOpacity onPress={() => router.push("/(screens)/farm")}>
+            <Text style={{ color: "#fff", textAlign: "center", fontSize: 12, marginTop: 6 }}>
+              Gameplay land: {farmLandLabels[selectedFarmLand] || farmLandLabels["starter-bed"]} • Tap to change
+            </Text>
+          </TouchableOpacity>
 
           <View style={{ width: "100%", backgroundColor: "rgba(0,0,0,0.22)", borderRadius: 16, padding: 12, marginTop: 10 }}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
@@ -378,6 +395,7 @@ const SelectSeed = () => {
               params: {
                 name: selectedSeed.name,
                 names: selectedPlants.join(","),
+                farmLand: selectedFarmLand,
                 offlineGardenData: includeOffline
                   ? JSON.stringify({
                       plantName: offlineForm.plantName || selectedSeed.name,

@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Farm Wizard App",
-    "slug": "farm-wizard-app",
+    "slug": "farm-wizard",
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -68,7 +68,7 @@
         "origin": false
       },
       "eas": {
-        "projectId": "ef3b79a4-e2d6-4370-b494-59618c3e2667"
+        "projectId": "42125824-0d07-4357-bab6-ce648c8cb2bb"
       }
     },
     "updates": {

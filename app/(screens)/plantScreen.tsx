@@ -45,7 +45,10 @@ import { playSound } from "@/utils/audio";
 import { API_BASE } from "@/config/client";
 import analytics from "@react-native-firebase/analytics";
 import BannerAdComponent from "@/utils/BannerAdComponent";
-import { schedulePausedSessionReminder } from "@/utils/notifications";
+import {
+  scheduleGameplayStatusNotification,
+  schedulePausedSessionReminder,
+} from "@/utils/notifications";
 import { recordEvent } from "@/utils/engagement";
 import { canShowInterstitial, markInterstitialShown } from "@/utils/adFrequency";
 import {
@@ -437,6 +440,7 @@ const PlantScreen = () => {
       GAMEPLAY_WIDGET_STATE_KEY,
       JSON.stringify(widgetState)
     );
+    await scheduleGameplayStatusNotification(widgetState);
   };
 
   const saveGameState = async () => {

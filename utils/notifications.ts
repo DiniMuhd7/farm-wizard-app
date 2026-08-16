@@ -18,6 +18,7 @@ const COME_BACK_ID = "come-back-reminder";
 const PAUSED_SESSION_ID = "paused-session-reminder";
 const LAST_ENGAGEMENT_KEY = "last-engagement-nudge";
 const LAST_NOTIFIED_KEY = "last-notified-app-notification";
+let lastGameplayStatusAt = 0;
 
 export const initNotifications = async () => {
   try {

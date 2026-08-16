@@ -48,6 +48,12 @@ import BannerAdComponent from "@/utils/BannerAdComponent";
 import { schedulePausedSessionReminder } from "@/utils/notifications";
 import { recordEvent } from "@/utils/engagement";
 import { canShowInterstitial, markInterstitialShown } from "@/utils/adFrequency";
+import {
+  applyOfflineInventoryChange,
+  getOfflineInventory,
+  getOfflinePlantLevel,
+  queueOfflineInventoryChange,
+} from "@/utils/offlineGameplay";
 import { getTrendTipForSession } from "@/constants/gardenTrends";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -220,85 +226,86 @@ const PlantScreen = () => {
       const token = await AsyncStorage.getItem("token");
       if (token !== null) {
         const res = await getUserPlantLevel(token, plant.name);
-        // console.log("res ", res);
-
         if (res.data.plantLevel !== null) {
           setUserLevel(res.data.plantLevel.level);
         } else {
-          setUserLevel(1);
+          setUserLevel(await getOfflinePlantLevel(plant.name));
         }
-        setLoading(false);
       } else {
-        console.log("no token");
-        setLoading(false);
+        setUserLevel(await getOfflinePlantLevel(plant.name));
       }
     } catch (error) {
-      console.log("error user plant level error", error);
+      console.log("Using offline plant level fallback", error);
+      setUserLevel(await getOfflinePlantLevel(plant.name));
     } finally {
       setLoading(false);
     }
   };
   const fetchUserInventoryData = async () => {
-    //setInvLoading(true);
     const token = await AsyncStorage.getItem("token");
-    if (token !== null) {
-      const res = await getUserPIventory(token);
-      const { pesticideItems, fertilizerItems, waterItems } = res;
-      if (res) {
-        setUserInventory({
-          fertilizerQty: fertilizerItems?.quantity || 0,
-          pesticideQty: pesticideItems?.quantity || 0,
-          waterQty: waterItems?.quantity || 0,
-        });
+    try {
+      if (token !== null) {
+        const res = await getUserPIventory(token);
+        const { pesticideItems, fertilizerItems, waterItems } = res;
+        if (res) {
+          const nextInventory = {
+            fertilizerQty: fertilizerItems?.quantity || 0,
+            pesticideQty: pesticideItems?.quantity || 0,
+            waterQty: waterItems?.quantity || 0,
+          };
+          setUserInventory(nextInventory);
+          await AsyncStorage.setItem("offlineGameplayInventory", JSON.stringify(nextInventory));
+        }
       } else {
-        setUserInventory({
-          fertilizerQty: 0,
-          pesticideQty: 0,
-          waterQty: 0,
-        });
+        setUserInventory(await getOfflineInventory());
       }
-      setInvLoading(false);
-    } else {
-      console.log("no token");
+    } catch (error) {
+      console.log("Using offline inventory fallback", error);
+      setUserInventory(await getOfflineInventory());
+    } finally {
       setInvLoading(false);
     }
   };
 
   const handleUpdateInventory = async (item: InventoryItemType, qty = 1) => {
-    //  setSubmitting(true);
+    const key = `${item.toLowerCase()}Qty` as InventoryKey;
+    setUserInventory((prev) => ({
+      ...prev,
+      [key]: Math.max((prev[key] || 0) - qty, 0),
+    }));
+    await applyOfflineInventoryChange(item, qty, "reduce");
+
     const token = await AsyncStorage.getItem("token");
     if (token !== null) {
       try {
         await updateInventory(token, item, qty);
-        const key = `${item.toLowerCase()}Qty` as InventoryKey;
-        // Optimistically update local state
-        setUserInventory((prev) => ({
-          ...prev,
-          [key]: Math.max((prev[key] || 0) - qty, 0),
-        }));
         fetchUserInventoryData();
       } catch (error: any) {
-        //  Alert.alert("Error", error.message);
-      } finally {
-        //  setSubmitting(false);
+        await queueOfflineInventoryChange(item, qty, "reduce");
       }
+    } else {
+      await queueOfflineInventoryChange(item, qty, "reduce");
     }
   };
   const handleGiftInventoryItem = async (item: string, qty = 10) => {
+    const key = `${item.toLowerCase()}Qty` as InventoryKey;
+    setUserInventory((prev) => ({
+      ...prev,
+      [key]: (prev[key] || 0) + qty,
+    }));
+    await applyOfflineInventoryChange(item, qty, "add");
+
     const token = await AsyncStorage.getItem("token");
     if (token !== null) {
       try {
         await addToInventory(token, item, qty);
-        const key = `${item.toLowerCase()}Qty` as InventoryKey;
-        setUserInventory((prev) => ({
-          ...prev,
-          [key]: (prev[key] || 0) + qty,
-          //[key]: Math.max((prev[key] || 0) + qty, 0),
-        }));
         fetchUserInventoryData();
       } catch (error: any) {
-        console.log("Error", error.message);
+        console.log("Queued offline gift", error.message);
+        await queueOfflineInventoryChange(item, qty, "add");
       }
+    } else {
+      await queueOfflineInventoryChange(item, qty, "add");
     }
   };
 
@@ -465,14 +472,14 @@ const PlantScreen = () => {
       await AsyncStorage.setItem("gameStates", JSON.stringify(allStates));
 
       // 🌐 Optional: sync only this plant to backend
-      await fetch(`${API_BASE}/api/v1/game-state/save`, {
+      fetch(`${API_BASE}/api/v1/game-state/save`, {
         method: "POST",
         headers: {
           Authorization: `JWT ${token}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify(gameState),
-      });
+      }).catch(() => {});
 
       // Remind the player to come back and finish this session
       schedulePausedSessionReminder(plantName);

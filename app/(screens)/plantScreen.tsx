@@ -629,12 +629,9 @@ const PlantScreen = () => {
   };
 
   useEffect(() => {
+    // Keep stage advice visible for every growth phase so players always know
+    // what the current plant stage needs instead of seeing tips only briefly.
     setShowPlantTipOverlay(true);
-    const timer = setTimeout(() => {
-      setShowPlantTipOverlay(false);
-    }, PLANT_TIP_VISIBLE_MS);
-
-    return () => clearTimeout(timer);
   }, [growthCycle.stage]);
 
   useEffect(() => {
@@ -1139,6 +1136,10 @@ const PlantScreen = () => {
       setIsThrottled(false);
     }, 2000);
 
+    if (toolUses.pesticide >= SESSION_TOOL_LIMITS.pesticide) {
+      handleLowItem("Pesticide limit reached for this session. Save sprays for serious threats.");
+      return;
+    }
     const currentQty = userInventory.pesticideQty;
 
     // Gifting logic
@@ -1156,6 +1157,7 @@ const PlantScreen = () => {
 
     if (availablePesticideQty > 0) {
       await handleUpdateInventory("Pesticide", 1);
+      setToolUses((prev) => ({ ...prev, pesticide: prev.pesticide + 1 }));
     } else {
       handleLowItem(
         t("game.insufficient_item", { item: `${t("inventory.pesticide")}` })
@@ -1199,6 +1201,10 @@ const PlantScreen = () => {
     setTimeout(() => {
       setIsThrottledF(false);
     }, 2000);
+    if (toolUses.fertilizer >= SESSION_TOOL_LIMITS.fertilizer) {
+      handleLowItem("Fertilizer limit reached for this session. Wait for the next crop run.");
+      return;
+    }
     const currentQty = userInventory.fertilizerQty;
 
     // Gifting logic
@@ -1215,6 +1221,7 @@ const PlantScreen = () => {
 
     if (availableFertilizerQty > 0) {
       await handleUpdateInventory("Fertilizer", 1);
+      setToolUses((prev) => ({ ...prev, fertilizer: prev.fertilizer + 1 }));
     } else {
       handleLowItem(
         t("game.insufficient_item", { item: `${t("inventory.fertilizer")}` })
@@ -1247,6 +1254,10 @@ const PlantScreen = () => {
     setTimeout(() => {
       setIsThrottledW(false);
     }, 2000);
+    if (toolUses.water >= SESSION_TOOL_LIMITS.water) {
+      handleLowItem("Water limit reached for this session. Time watering around dry spells.");
+      return;
+    }
     const currentQty = userInventory.waterQty;
 
     // Gifting logic
@@ -1264,6 +1275,7 @@ const PlantScreen = () => {
 
     if (availableWaterQty > 0) {
       await handleUpdateInventory("Water", 1);
+      setToolUses((prev) => ({ ...prev, water: prev.water + 1 }));
     } else {
       handleLowItem(
         t("game.insufficient_item", { item: `${t("inventory.water")}` })

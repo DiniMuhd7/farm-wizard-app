@@ -1,10 +1,11 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   Linking,
   StyleSheet,
+  useWindowDimensions,
 } from "react-native";
 import { BannerAd, BannerAdSize, TestIds } from "react-native-google-mobile-ads";
 import { Cross, ChevronRight } from "lucide-react-native";
@@ -48,21 +49,36 @@ const LifeGateBanner = () => (
 
 const BannerAdComponent = ({
   adUnitId = __DEV__ ? TestIds.BANNER : "ca-app-pub-4516568539037938/3383596217",
+  size = BannerAdSize.ANCHORED_ADAPTIVE_BANNER,
   style = {},
 }: Props) => {
-  // AdMob banner fills the slot when it loads; while it has no fill we
-  // show the LifeGate house banner instead. If AdMob later loads (it
-  // refreshes periodically), the house banner is hidden again.
+  const { width } = useWindowDimensions();
+  // Adaptive banners calculate their creative size from the mounted view width.
+  // Keep the ad mounted in a real-width container (rather than height: 0) so
+  // gameplay banners request the correct size and can recover when rotation or
+  // layout width changes.
+  const adRequestKey = useMemo(
+    () => `${adUnitId}-${size}-${Math.round(width)}`,
+    [adUnitId, size, width]
+  );
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
 
   return (
     <View style={[styles.container, style]}>
       {failed && !loaded && <LifeGateBanner />}
-      <View style={loaded ? undefined : styles.hidden}>
+      {!failed && !loaded && <View style={styles.placeholder} />}
+      <View
+        style={[
+          styles.adSlot,
+          loaded ? styles.visibleAd : styles.measuringAd,
+          failed && !loaded ? styles.failedAd : null,
+        ]}
+      >
         <BannerAd
+          key={adRequestKey}
           unitId={adUnitId}
-          size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
+          size={size}
           requestOptions={{
             requestNonPersonalizedAdsOnly: true,
           }}
@@ -85,10 +101,32 @@ const styles = StyleSheet.create({
   container: {
     alignItems: "center",
     justifyContent: "center",
+    width: "100%",
+    minHeight: 50,
+    backgroundColor: "transparent",
   },
-  hidden: {
-    height: 0,
-    overflow: "hidden",
+  placeholder: {
+    height: 50,
+    width: "100%",
+  },
+  adSlot: {
+    width: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  visibleAd: {
+    minHeight: 50,
+  },
+  measuringAd: {
+    opacity: 0,
+    minHeight: 50,
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  failedAd: {
+    pointerEvents: "none",
   },
   lifeGate: {
     flexDirection: "row",

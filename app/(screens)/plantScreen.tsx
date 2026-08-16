@@ -67,9 +67,9 @@ const TEN_MINUTES = GAME_DURATION; // legacy alias used throughout this file
 const PHASE_DURATION = GAME_DURATION / 4; // one growth stage
 const TOOL_ICON_SIZE = 44;
 const ACTION_ICON_SIZE = 60;
-const LOW_INVENTORY_GIFT_QTY = 2;
-const PLANT_TIP_VISIBLE_MS = 6500;
+const LOW_INVENTORY_GIFT_QTY = 1;
 const GAMEPLAY_WIDGET_STATE_KEY = "gameplayWidgetState";
+const OWNED_FARM_DECORATIONS_KEY = "ownedFarmDecorations";
 const farmLandLabels: Record<string, string> = {
   "starter-bed": "🏡 Starter Backyard Bed",
   "sunny-acre": "🌞 Sunny Market Acre",
@@ -77,12 +77,32 @@ const farmLandLabels: Record<string, string> = {
   "orchard-terrace": "🌳 Orchard Terrace",
 };
 const CARE_RECOVERY = {
-  fertilizer: 12,
-  pesticide: 14,
-  water: 10,
+  fertilizer: 8,
+  pesticide: 9,
+  water: 7,
+};
+const CARE_REFILL = {
+  fertilizer: 34,
+  water: 32,
+};
+const SESSION_TOOL_LIMITS = {
+  fertilizer: 5,
+  pesticide: 4,
+  water: 6,
+};
+const FARM_LAND_EFFECTS: Record<string, { scoreBonus: number; waterDecay: number; nutrientDecay: number; pestDamage: number }> = {
+  "starter-bed": { scoreBonus: 1, waterDecay: 1, nutrientDecay: 1, pestDamage: 1 },
+  "sunny-acre": { scoreBonus: 1.08, waterDecay: 1.08, nutrientDecay: 0.96, pestDamage: 1 },
+  "rain-barrel-plot": { scoreBonus: 1.02, waterDecay: 0.84, nutrientDecay: 1, pestDamage: 0.95 },
+  "orchard-terrace": { scoreBonus: 1.12, waterDecay: 0.96, nutrientDecay: 0.92, pestDamage: 0.9 },
+};
+const COSMETIC_EFFECTS: Record<string, { scoreBonus?: number; pestDamage?: number; waterDecay?: number; nutrientDecay?: number; healthRecovery?: number }> = {
+  frame_gold: { scoreBonus: 1.05 },
+  frame_emerald: { healthRecovery: 1.08, pestDamage: 0.95 },
+  frame_royal: { scoreBonus: 1.08, healthRecovery: 1.05 },
 };
 
-const SEASONS = ["normal", "dry", "raining"] as const;
+const SEASONS = ["normal", "dry", "drought", "famine", "raining"] as const;
 type SeasonType = (typeof SEASONS)[number];
 type InventoryItemType = "Fertilizer" | "Pesticide" | "Water";
 type InventoryKey = "fertilizerQty" | "pesticideQty" | "waterQty";
@@ -106,7 +126,7 @@ const buildSeasonSchedule = (total: number): SeasonSegment[] => {
   while (elapsed < total) {
     const duration = 15 + Math.floor(Math.random() * 16); // 15-30s
     const pool: SeasonType[] = (
-      ["normal", "normal", "dry", "raining"] as SeasonType[]
+      ["normal", "normal", "dry", "drought", "famine", "raining"] as SeasonType[]
     ).filter((s) => s !== prev);
     const season = pool[Math.floor(Math.random() * pool.length)];
     segments.push({ season, duration });
@@ -131,7 +151,7 @@ const PlantScreen = () => {
     waterQty: 0,
   });
   const [userLevel, setUserLevel] = useState(1);
-  const MAX_BUGS = userLevel; //2;
+  const MAX_BUGS = Math.min(8, Math.max(3, userLevel + 2));
   const plants = usePlantGrowth();
   const selectedPlantNames = String(names || name)
     .split(",")
@@ -220,8 +240,31 @@ const PlantScreen = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [randomNormalSound, setRandomNormalSound] = useState(1);
   const [showPlantTipOverlay, setShowPlantTipOverlay] = useState(true);
+  const [toolUses, setToolUses] = useState({ fertilizer: 0, pesticide: 0, water: 0 });
+  const [decorationBonus, setDecorationBonus] = useState({ scoreBonus: 1, healthRecovery: 1 });
+  const equippedFrame = String(user?.equippedFrame || "");
+  const equippedSkin = String(user?.equippedSkin || "");
+  const selectedLandId = String(farmLand || "starter-bed");
+  const landEffect = FARM_LAND_EFFECTS[selectedLandId] || FARM_LAND_EFFECTS["starter-bed"];
+  const cosmeticEffect = {
+    scoreBonus: (COSMETIC_EFFECTS[equippedFrame]?.scoreBonus || 1) * (COSMETIC_EFFECTS[equippedSkin]?.scoreBonus || 1),
+    pestDamage: (COSMETIC_EFFECTS[equippedFrame]?.pestDamage || 1) * (COSMETIC_EFFECTS[equippedSkin]?.pestDamage || 1),
+    waterDecay: (COSMETIC_EFFECTS[equippedFrame]?.waterDecay || 1) * (COSMETIC_EFFECTS[equippedSkin]?.waterDecay || 1),
+    nutrientDecay: (COSMETIC_EFFECTS[equippedFrame]?.nutrientDecay || 1) * (COSMETIC_EFFECTS[equippedSkin]?.nutrientDecay || 1),
+    healthRecovery: (COSMETIC_EFFECTS[equippedFrame]?.healthRecovery || 1) * (COSMETIC_EFFECTS[equippedSkin]?.healthRecovery || 1) * decorationBonus.healthRecovery,
+  };
   const appStateRef = useRef(AppState.currentState);
   const backgroundedAtRef = useRef<number | null>(null);
+
+  const loadDecorationBonus = async () => {
+    const raw = await AsyncStorage.getItem(OWNED_FARM_DECORATIONS_KEY);
+    const decorationIds = raw ? JSON.parse(raw) : [];
+    const ownedCount = Array.isArray(decorationIds) ? decorationIds.length : 0;
+    setDecorationBonus({
+      scoreBonus: 1 + Math.min(0.12, ownedCount * 0.02),
+      healthRecovery: 1 + Math.min(0.1, ownedCount * 0.015),
+    });
+  };
 
   const fetchUserPlantLevelData = async (): Promise<void> => {
     setLoading(true);
@@ -397,9 +440,11 @@ const PlantScreen = () => {
 
   // Evaluated every second, so keep these low or threats become relentless.
   const getThreatChance = (season: SeasonType) => {
-    if (season === "dry") return 0.05;
-    if (season === "raining") return 0.06;
-    return 0.03;
+    if (season === "famine") return 0.085;
+    if (season === "drought") return 0.075;
+    if (season === "dry") return 0.06;
+    if (season === "raining") return 0.065;
+    return 0.035;
   };
 
   // A threat left unhandled clears itself after this long so a player who
@@ -504,8 +549,9 @@ const PlantScreen = () => {
     return c.count;
   };
   const gainScore = (mult: number) => {
-    setScore((s) => Math.min(s + 3 * mult, 100000));
-    if (mult > 1) handleToolUse(`🔥 Combo x${mult}!  +${3 * mult}`);
+    const points = Math.max(1, Math.round(3 * mult * landEffect.scoreBonus * cosmeticEffect.scoreBonus * decorationBonus.scoreBonus));
+    setScore((s) => Math.min(s + points, 100000));
+    if (mult > 1) handleToolUse(`🔥 Combo x${mult}!  +${points}`);
   };
   const prevPathRef = useRef<string>("");
   const pathname = usePathname();
@@ -588,12 +634,9 @@ const PlantScreen = () => {
   };
 
   useEffect(() => {
+    // Keep stage advice visible for every growth phase so players always know
+    // what the current plant stage needs instead of seeing tips only briefly.
     setShowPlantTipOverlay(true);
-    const timer = setTimeout(() => {
-      setShowPlantTipOverlay(false);
-    }, PLANT_TIP_VISIBLE_MS);
-
-    return () => clearTimeout(timer);
   }, [growthCycle.stage]);
 
   useEffect(() => {
@@ -643,9 +686,11 @@ const PlantScreen = () => {
     // Decay logic mirrors garden care rhythms for a longer planning session.
     // Dry spells mainly reduce water, rain can leach nutrients, and normal
     // weather changes slowly enough to support longer crop cycles.
-    const waterDecay =
-      currentSeason === "dry" ? 1.35 : currentSeason === "normal" ? 0.65 : 0.25;
-    const nutrientDecay = currentSeason === "raining" ? 0.95 : 0.5;
+    const baseWaterDecay =
+      currentSeason === "famine" ? 1.8 : currentSeason === "drought" ? 1.55 : currentSeason === "dry" ? 1.25 : currentSeason === "normal" ? 0.7 : 0.3;
+    const baseNutrientDecay = currentSeason === "famine" ? 1.25 : currentSeason === "drought" ? 0.85 : currentSeason === "raining" ? 1.0 : 0.55;
+    const waterDecay = baseWaterDecay * landEffect.waterDecay * cosmeticEffect.waterDecay;
+    const nutrientDecay = baseNutrientDecay * landEffect.nutrientDecay * cosmeticEffect.nutrientDecay;
 
     setWaterLevel((prev) => Math.max(0, prev - waterDecay));
     setNutrientLevel((prev) => Math.max(0, prev - nutrientDecay));
@@ -669,7 +714,7 @@ const PlantScreen = () => {
       if (!activeThreat.resolved) {
         if (activeThreat.type === "disease" && timeSinceThreat > 10000) {
           // angoing health drain
-          setPlantHealth((h) => Math.max(0, h - getThreatPanelty(userLevel)));
+          setPlantHealth((h) => Math.max(0, h - Math.ceil(getThreatPanelty(userLevel) * 1.35 * landEffect.pestDamage * cosmeticEffect.pestDamage)));
           //handleToolUse("☠️ Disease is hurting your plant!");
           setPlantDamaged(true);
           if (!sickModalShown) {
@@ -682,7 +727,7 @@ const PlantScreen = () => {
         // (previously it re-applied every tick because resolved was never set).
         if (activeThreat.type === "storm" && timeSinceThreat > 5000) {
           setPlantHealth((h) =>
-            Math.max(0, h - getThreatPanelty(userLevel) + 10)
+            Math.max(0, h - Math.ceil(getThreatPanelty(userLevel) * 1.2 * landEffect.pestDamage * cosmeticEffect.pestDamage))
           );
           setPlantDamaged(true);
           if (!sickModalShown) {
@@ -995,6 +1040,7 @@ const PlantScreen = () => {
       logEvent();
       loadSounds();
       restoreGameState();
+      loadDecorationBonus();
       // PLANT ANIMATION
       // animatePlantGrowing();
       fetchUserPlantLevelData();
@@ -1083,7 +1129,7 @@ const PlantScreen = () => {
   };
 
   const recoverPlantHealth = (amount: number) => {
-    setPlantHealth((health) => Math.min(100, Math.max(1, health) + amount));
+    setPlantHealth((health) => Math.min(100, Math.max(1, health) + Math.round(amount * cosmeticEffect.healthRecovery)));
     setPlantDamaged(false);
   };
 
@@ -1094,6 +1140,10 @@ const PlantScreen = () => {
       setIsThrottled(false);
     }, 2000);
 
+    if (toolUses.pesticide >= SESSION_TOOL_LIMITS.pesticide) {
+      handleLowItem("Pesticide limit reached for this session. Save sprays for serious threats.");
+      return;
+    }
     const currentQty = userInventory.pesticideQty;
 
     // Gifting logic
@@ -1111,6 +1161,7 @@ const PlantScreen = () => {
 
     if (availablePesticideQty > 0) {
       await handleUpdateInventory("Pesticide", 1);
+      setToolUses((prev) => ({ ...prev, pesticide: prev.pesticide + 1 }));
     } else {
       handleLowItem(
         t("game.insufficient_item", { item: `${t("inventory.pesticide")}` })
@@ -1152,6 +1203,10 @@ const PlantScreen = () => {
     setTimeout(() => {
       setIsThrottledF(false);
     }, 2000);
+    if (toolUses.fertilizer >= SESSION_TOOL_LIMITS.fertilizer) {
+      handleLowItem("Fertilizer limit reached for this session. Wait for the next crop run.");
+      return;
+    }
     const currentQty = userInventory.fertilizerQty;
 
     // Gifting logic
@@ -1168,6 +1223,7 @@ const PlantScreen = () => {
 
     if (availableFertilizerQty > 0) {
       await handleUpdateInventory("Fertilizer", 1);
+      setToolUses((prev) => ({ ...prev, fertilizer: prev.fertilizer + 1 }));
     } else {
       handleLowItem(
         t("game.insufficient_item", { item: `${t("inventory.fertilizer")}` })
@@ -1175,7 +1231,7 @@ const PlantScreen = () => {
       return;
     }
 
-    setNutrientLevel(100);
+    setNutrientLevel((level) => Math.min(100, level + CARE_REFILL.fertilizer));
     recoverPlantHealth(CARE_RECOVERY.fertilizer);
     gainScore(applyCombo());
     recordEvent("fertilizer_used");
@@ -1200,6 +1256,10 @@ const PlantScreen = () => {
     setTimeout(() => {
       setIsThrottledW(false);
     }, 2000);
+    if (toolUses.water >= SESSION_TOOL_LIMITS.water) {
+      handleLowItem("Water limit reached for this session. Time watering around dry spells.");
+      return;
+    }
     const currentQty = userInventory.waterQty;
 
     // Gifting logic
@@ -1217,6 +1277,7 @@ const PlantScreen = () => {
 
     if (availableWaterQty > 0) {
       await handleUpdateInventory("Water", 1);
+      setToolUses((prev) => ({ ...prev, water: prev.water + 1 }));
     } else {
       handleLowItem(
         t("game.insufficient_item", { item: `${t("inventory.water")}` })
@@ -1224,7 +1285,7 @@ const PlantScreen = () => {
       return;
     }
 
-    setWaterLevel(100);
+    setWaterLevel((level) => Math.min(100, level + CARE_REFILL.water));
     recoverPlantHealth(CARE_RECOVERY.water);
     gainScore(applyCombo());
     recordEvent("water_used");
@@ -1290,7 +1351,7 @@ const PlantScreen = () => {
               />
             </ImageBackground>
           )}
-          {currentSeason === "dry" && (
+          {(currentSeason === "dry" || currentSeason === "drought" || currentSeason === "famine") && (
             <Image
               source={images.bgDry}
               className="absolute w-full h-full"
@@ -1456,7 +1517,7 @@ const PlantScreen = () => {
                 Day {realDaysElapsed}/{plantCycleDays} • {currentStagePlan?.name}
               </Text>
               <Text className="text-white/75 text-[10px] mt-1">
-                Land: {farmLandLabels[String(farmLand || "starter-bed")] || farmLandLabels["starter-bed"]}
+                Land: {farmLandLabels[selectedLandId] || farmLandLabels["starter-bed"]} • Care uses left: 💧{SESSION_TOOL_LIMITS.water - toolUses.water} 🧪{SESSION_TOOL_LIMITS.fertilizer - toolUses.fertilizer} 🛡️{SESSION_TOOL_LIMITS.pesticide - toolUses.pesticide}
               </Text>
               <Text className="text-white/75 text-[10px] mt-1">
                 Spacing: {plant.spacing}
@@ -1564,19 +1625,21 @@ const PlantScreen = () => {
                 className={`w-48 `}
               />
             )}
-            {activeThreat && !activeThreat.resolved && (
-              <ExpoImage
-                source={images.bugs}
-                style={{
-                  width: 24,
-                  height: 24,
-                  position: "absolute", // <-- This removes it from layout flow
-                  top: 92, // Adjust as needed
-                  left: 138, // Adjust as needed
-                  zIndex: 10, // Make sure it's above the plant
-                }}
-              />
-            )}
+            {activeThreat && !activeThreat.resolved &&
+              Array.from({ length: activeThreat.type === "disease" ? MAX_BUGS : Math.max(2, Math.floor(MAX_BUGS / 2)) }).map((_, index) => (
+                <ExpoImage
+                  key={`threat-${index}`}
+                  source={images.bugs}
+                  style={{
+                    width: 34,
+                    height: 34,
+                    position: "absolute",
+                    top: 72 + (index % 3) * 30,
+                    left: 96 + (index % 4) * 28,
+                    zIndex: 10,
+                  }}
+                />
+              ))}
             {isTimerActive && !soilVisible &&
               (plantImages?.length ? (
                 <Animated.Image

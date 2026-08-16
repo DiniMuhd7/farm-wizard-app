@@ -12,7 +12,7 @@ import {
   equipCosmetic,
 } from "@/services/rewardsApi";
 
-type Item = { id: string; type: string; name: string; price: number };
+type Item = { id: string; type: string; name: string; price: number; bonus?: string };
 
 const Cosmetics = () => {
   const { user, setUser } = useLoginContext();
@@ -63,7 +63,7 @@ const Cosmetics = () => {
       if (res?.success) {
         if (res.userDetails) setUser(res.userDetails);
         await load();
-        Alert.alert("Unlocked", res.message || `${item.name} unlocked!`);
+        Alert.alert("Unlocked", res.message || `${item.name} unlocked with a gameplay bonus!`);
       } else {
         Alert.alert("Couldn't buy", res?.message || "Please try again.");
       }
@@ -110,6 +110,9 @@ const Cosmetics = () => {
                 <View className="flex-1">
                   <Text className="text-white font-psemibold text-base">
                     {item.name}
+                  </Text>
+                  <Text className="text-yellow-100 text-xs mt-0.5">
+                    {item.bonus || (type === "frame" ? "Equipped frame bonus: better scoring or recovery" : "Equipped skin bonus: steadier care efficiency")}
                   </Text>
                   {!isOwned && (
                     <Text className="text-white/70 text-xs mt-0.5">

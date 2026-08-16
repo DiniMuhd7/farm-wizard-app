@@ -23,6 +23,12 @@ import { submitDailyScore } from "@/services/rewardsApi";
 import { dailyCrop } from "@/utils/dailyChallenge";
 import { saveFarmCycleRecord } from "@/utils/farmDashboard";
 import { addToInventory } from "@/services/userInventory";
+import {
+  applyOfflineInventoryChange,
+  queueOfflineHarvest,
+  queueOfflineInventoryChange,
+  setOfflinePlantLevel,
+} from "@/utils/offlineGameplay";
 
 const REWARD_ADS_VIEW_LIMIT = 3;
 const AD_BONUS_POINTS = 50;
@@ -101,10 +107,20 @@ const Harvest = () => {
 
   const grantCareRewards = async () => {
     const token = await AsyncStorage.getItem("token");
-    if (!token) return;
     const rewards = calculateCareRewards();
     await Promise.all(
-      Object.entries(rewards).map(([item, qty]) => addToInventory(token, item, qty))
+      Object.entries(rewards).map(async ([item, qty]) => {
+        await applyOfflineInventoryChange(item, qty, "add");
+        if (!token) {
+          await queueOfflineInventoryChange(item, qty, "add");
+          return;
+        }
+        try {
+          await addToInventory(token, item, qty);
+        } catch {
+          await queueOfflineInventoryChange(item, qty, "add");
+        }
+      })
     );
     return rewards;
   };
@@ -135,6 +151,7 @@ const Harvest = () => {
         //   "Session completed & level upgraded successfully"
         // );
         setUser(result.data.updateUser);
+        await setOfflinePlantLevel(plant.name, level);
         // setTimeout(() => {
         //   router.replace({
         //     pathname: "/(screens)/profile",
@@ -142,10 +159,16 @@ const Harvest = () => {
         //   });
         // }, 3000);
       } catch (error: any) {
-        Alert.alert("Error", error.message);
+        await setOfflinePlantLevel(plant.name, level);
+        await queueOfflineHarvest(plant.name, level, Number(totalSocre));
+        Alert.alert("Saved offline", "Your harvest was saved on this device and will remain playable offline.");
       } finally {
         setSubmitting(false);
       }
+    } else {
+      await setOfflinePlantLevel(plant.name, level);
+      await queueOfflineHarvest(plant.name, level, Number(totalSocre));
+      setSubmitting(false);
     }
   };
 
@@ -218,10 +241,10 @@ const Harvest = () => {
 
         const token = await AsyncStorage.getItem("token");
         if (!token) return;
-        await fetch(`${API_BASE}/api/v1/game-state/clear/${plantName}`, {
+        fetch(`${API_BASE}/api/v1/game-state/clear/${plantName}`, {
           method: "DELETE",
           headers: { Authorization: `JWT ${token}` },
-        });
+        }).catch(() => {});
 
         // console.log(`Cleared local save for ${plantName}`);
       };

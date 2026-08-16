@@ -320,6 +320,12 @@ const ClaimScreen = () => {
 
   const isCryptoProvider = selectedProvider?.name === "Crypto";
   const isPaypalProvider = selectedProvider?.name === "PayPal";
+  const remainingWiz = Math.max(0, MIN_WIZ - wizPoints);
+  const rewardStats = [
+    { label: "Claim status", value: isEligible ? "Ready" : "Growing", emoji: isEligible ? "✅" : "🌱" },
+    { label: "To unlock", value: `${remainingWiz.toLocaleString()} WZP`, emoji: "🎯" },
+    { label: "Methods", value: "Crypto / PayPal", emoji: "💼" },
+  ];
 
   return (
     <View className="flex-1 bg-green-200 items-center justify-start relative">
@@ -342,7 +348,7 @@ const ClaimScreen = () => {
       </Text>
 
       {/* Balance card */}
-      <View className="w-[92%] bg-[#E0C145B8] rounded-2xl p-4 mt-2">
+      <View className="w-[92%] bg-green-950/75 rounded-3xl p-4 mt-2 border border-yellow-200/30">
         <Text className="text-white/90 text-xs font-pmedium text-center">
           YOUR BALANCE
         </Text>
@@ -369,6 +375,16 @@ const ClaimScreen = () => {
         </Text>
       </View>
 
+      <View className="w-[92%] flex-row justify-between mt-3">
+        {rewardStats.map((stat) => (
+          <View key={stat.label} className="bg-black/30 rounded-2xl p-3 items-center" style={{ width: "31%" }}>
+            <Text className="text-2xl">{stat.emoji}</Text>
+            <Text className="text-white font-pbold text-xs text-center mt-1">{stat.value}</Text>
+            <Text className="text-white/65 text-[10px] text-center mt-1">{stat.label}</Text>
+          </View>
+        ))}
+      </View>
+
       {activeTab === "Garden Grants" && (
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -380,9 +396,12 @@ const ClaimScreen = () => {
             contentContainerStyle={{ paddingBottom: 16 }}
           >
             {/* How garden grant claims work */}
-            <View className="bg-black/30 rounded-2xl p-4 my-3">
-              <Text className="text-[#F2DE9F] font-pbold text-base mb-2">
-                How garden grant claims work
+            <View className="bg-black/35 rounded-3xl p-4 my-3 border border-white/10">
+              <Text className="text-[#F2DE9F] font-pbold text-base mb-1">
+                Garden rewards roadmap
+              </Text>
+              <Text className="text-white/75 text-xs mb-3">
+                Turn gameplay performance into verified garden support. Higher consistency keeps your account claim-ready.
               </Text>
               {[
                 "Play games to earn WizPoints.",

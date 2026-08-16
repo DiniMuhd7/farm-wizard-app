@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Farm Wizard App",
-    "slug": "farm-wizard-app",
+    "slug": "farm-wizard",
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -68,13 +68,13 @@
         "origin": false
       },
       "eas": {
-        "projectId": "6fb14c62-f64b-4fdd-a6cf-6d4fd15d2e9e"
+        "projectId": "42125824-0d07-4357-bab6-ce648c8cb2bb"
       }
     },
     "updates": {
       "enabled": true,
       "checkAutomatically": "ON_LOAD"
     },
-    "owner": "muhdsdeen7"
+    "owner": "dshub"
   }
 }

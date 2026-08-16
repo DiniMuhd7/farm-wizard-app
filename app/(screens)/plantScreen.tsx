@@ -85,11 +85,7 @@ const CARE_REFILL = {
   fertilizer: 34,
   water: 32,
 };
-const SESSION_TOOL_LIMITS = {
-  fertilizer: 5,
-  pesticide: 4,
-  water: 6,
-};
+const PLANT_TIP_VISIBLE_MS = 6500;
 const FARM_LAND_EFFECTS: Record<string, { scoreBonus: number; waterDecay: number; nutrientDecay: number; pestDamage: number }> = {
   "starter-bed": { scoreBonus: 1, waterDecay: 1, nutrientDecay: 1, pestDamage: 1 },
   "sunny-acre": { scoreBonus: 1.08, waterDecay: 1.08, nutrientDecay: 0.96, pestDamage: 1 },
@@ -240,7 +236,6 @@ const PlantScreen = () => {
   const [isMuted, setIsMuted] = useState(false);
   const [randomNormalSound, setRandomNormalSound] = useState(1);
   const [showPlantTipOverlay, setShowPlantTipOverlay] = useState(true);
-  const [toolUses, setToolUses] = useState({ fertilizer: 0, pesticide: 0, water: 0 });
   const [decorationBonus, setDecorationBonus] = useState({ scoreBonus: 1, healthRecovery: 1 });
   const equippedFrame = String(user?.equippedFrame || "");
   const equippedSkin = String(user?.equippedSkin || "");
@@ -1517,7 +1512,7 @@ const PlantScreen = () => {
                 Day {realDaysElapsed}/{plantCycleDays} • {currentStagePlan?.name}
               </Text>
               <Text className="text-white/75 text-[10px] mt-1">
-                Land: {farmLandLabels[selectedLandId] || farmLandLabels["starter-bed"]} • Care uses left: 💧{SESSION_TOOL_LIMITS.water - toolUses.water} 🧪{SESSION_TOOL_LIMITS.fertilizer - toolUses.fertilizer} 🛡️{SESSION_TOOL_LIMITS.pesticide - toolUses.pesticide}
+                Land: {farmLandLabels[selectedLandId] || farmLandLabels["starter-bed"]}
               </Text>
               <Text className="text-white/75 text-[10px] mt-1">
                 Spacing: {plant.spacing}

@@ -1128,8 +1128,9 @@ const PlantScreen = () => {
     setPlantDamaged(false);
   };
 
-  const triggerSpray = async () => {
-    if ((!activeThreat || activeThreat.resolved) && plantHealth > 0) return;
+  const triggerSpray = async (allowPreventive = true) => {
+    const hadActiveThreat = Boolean(activeThreat && !activeThreat.resolved);
+    if (!hadActiveThreat && !allowPreventive && plantHealth > 0) return;
     setIsThrottled(true); // Disable further click
     setTimeout(() => {
       setIsThrottled(false);
@@ -1164,9 +1165,12 @@ const PlantScreen = () => {
       return;
     }
 
-    setTimeout(() => {
-      setActiveThreat(null);
-    }, 1000);
+    if (hadActiveThreat) {
+      setTimeout(() => {
+        setActiveThreat(null);
+      }, 1000);
+    }
+    handleToolUse(hadActiveThreat ? "🛡️ Pesticide applied! Threat cleared." : "🛡️ Preventive pesticide applied!");
 
     setSoilVisible(false);
     setPlantDamaged(false);
@@ -1193,7 +1197,6 @@ const PlantScreen = () => {
     });
   };
   const triggerFertilizer = async () => {
-    if (nutrientLevel > 60) return;
     setIsThrottledF(true); // Disable further click
     setTimeout(() => {
       setIsThrottledF(false);
@@ -1228,6 +1231,7 @@ const PlantScreen = () => {
 
     setNutrientLevel((level) => Math.min(100, level + CARE_REFILL.fertilizer));
     recoverPlantHealth(CARE_RECOVERY.fertilizer);
+    handleToolUse("🧪 Fertilizer applied! Nutrients boosted.");
     gainScore(applyCombo());
     recordEvent("fertilizer_used");
     setFertilizing(true);
@@ -1246,7 +1250,6 @@ const PlantScreen = () => {
     });
   };
   const triggerWater = async () => {
-    if (waterLevel > 60) return;
     setIsThrottledW(true); // Disable further click
     setTimeout(() => {
       setIsThrottledW(false);
@@ -1282,6 +1285,7 @@ const PlantScreen = () => {
 
     setWaterLevel((level) => Math.min(100, level + CARE_REFILL.water));
     recoverPlantHealth(CARE_RECOVERY.water);
+    handleToolUse("💧 Water applied! Moisture boosted.");
     gainScore(applyCombo());
     recordEvent("water_used");
     setWatering(true);
@@ -1320,7 +1324,7 @@ const PlantScreen = () => {
   return (
     <>
       <TouchableWithoutFeedback
-        onPress={throttledTriggerSpray}
+        onPress={() => throttledTriggerSpray(false)}
         disabled={isThrottled}
       >
         <View className="flex-1 relative bg-green-200" pointerEvents="box-none">

@@ -23,7 +23,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.grow.farmwizard",
-      "versionCode": 18,
+      "versionCode": 21,
       "googleServicesFile": "./google-services.json"
     },
     "web": {

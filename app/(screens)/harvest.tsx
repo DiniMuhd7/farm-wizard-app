@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import BackgroundImage from "@/components/BackgroundImage";
 import { images } from "@/constants";
-import { View, Text, Image, Dimensions, Alert } from "react-native";
+import { View, Text, Image, Dimensions, Alert, ScrollView } from "react-native";
 import { CustomButton } from "../../components";
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { usePlantGrowth } from "@/constants/plants";
@@ -295,107 +295,118 @@ const Harvest = () => {
   const { t } = useTranslation();
 
   return (
-    <View className="flex-1 bg-green-200 items-center justify-start pt-20">
+    <View className="flex-1 bg-green-200">
       {/* Background */}
       <BackgroundImage
         source={images.bgRainfall}
         style={{ width: "100%", height: "100%", position: "absolute" }}
       />
 
-      {/* Title */}
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{
+          alignItems: "center",
+          justifyContent: "flex-start",
+          paddingTop: 80,
+          paddingBottom: 40,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Title */}
 
-      <View className="items-center justify-center my-14">
-        <Text className="text-white text-3xl font-primary">
-          {" "}
-          {t("menu.session")}
-        </Text>
-        <Text className="text-white text-3xl font-primary">
-          {t("menu.completed")}
-        </Text>
-
-        <Image
-          source={images.sessionComplete}
-          style={{
-            width: width * 0.5,
-            height: width * 0.5,
-            marginBottom: 10,
-          }}
-          resizeMode="contain"
-        />
-
-        <Text className="text-center text-xl p-4 my-2 text-white">
-          {t("game.total_points")}
-        </Text>
-
-        <Text className="text-center text-5xl font-bold font-secondary p-4 text-[#FEDA42]">
-          {Number(totalSocre).toFixed(2)}
-          {/* {score} */}
-        </Text>
-        <Text className="text-center text-xl p-4 my-2 text-white">
-          {t("messages.harvest")}
-        </Text>
-        <Text className="text-center text-sm px-4 text-yellow-100">
-          Performance care rewards: 💧 {calculateCareRewards().Water} water • 🧪 {calculateCareRewards().Fertilizer} fertilizer • 🛡️ {calculateCareRewards().Pesticide} pesticide
-        </Text>
-        <View className="bg-black/25 rounded-2xl px-4 py-3 w-[88%]">
-          <Text className="text-white text-center font-pbold">
-            {plant.emoji || "🌱"} Nutrition strength: {plant.nutrition?.strength || "Fresh produce"}
+        <View className="items-center justify-center my-14">
+          <Text className="text-white text-3xl font-primary">
+            {" "}
+            {t("menu.session")}
           </Text>
-          <Text className="text-yellow-100 text-center text-xs mt-1">
-            {plant.nutrition?.impact || "Adds fresh garden variety to household meals."}
+          <Text className="text-white text-3xl font-primary">
+            {t("menu.completed")}
           </Text>
-          {companions.length > 0 && (
-            <Text className="text-white/80 text-center text-xs mt-1">
-              Companion harvest tracked: {companions.join(", ")}
+
+          <Image
+            source={images.sessionComplete}
+            style={{
+              width: width * 0.5,
+              height: width * 0.5,
+              marginBottom: 10,
+            }}
+            resizeMode="contain"
+          />
+
+          <Text className="text-center text-xl p-4 my-2 text-white">
+            {t("game.total_points")}
+          </Text>
+
+          <Text className="text-center text-5xl font-bold font-secondary p-4 text-[#FEDA42]">
+            {Number(totalSocre).toFixed(2)}
+            {/* {score} */}
+          </Text>
+          <Text className="text-center text-xl p-4 my-2 text-white">
+            {t("messages.harvest")}
+          </Text>
+          <Text className="text-center text-sm px-4 text-yellow-100">
+            Performance care rewards: 💧 {calculateCareRewards().Water} water • 🧪 {calculateCareRewards().Fertilizer} fertilizer • 🛡️ {calculateCareRewards().Pesticide} pesticide
+          </Text>
+          <View className="bg-black/25 rounded-2xl px-4 py-3 w-[88%]">
+            <Text className="text-white text-center font-pbold">
+              {plant.emoji || "🌱"} Nutrition strength: {plant.nutrition?.strength || "Fresh produce"}
+            </Text>
+            <Text className="text-yellow-100 text-center text-xs mt-1">
+              {plant.nutrition?.impact || "Adds fresh garden variety to household meals."}
+            </Text>
+            {companions.length > 0 && (
+              <Text className="text-white/80 text-center text-xs mt-1">
+                Companion harvest tracked: {companions.join(", ")}
+              </Text>
+            )}
+            {offlineComparison && (
+              <Text className="text-white/80 text-center text-xs mt-1">
+                Offline comparison: {offlineComparison.healthGap >= 0 ? "+" : ""}{offlineComparison.healthGap}% health vs {offlineGarden.plantName}.
+              </Text>
+            )}
+          </View>
+
+          {!isPremiumUser && !bonusEarned && (
+            <CustomButton
+              title={`🎁 Watch Ad to Earn +${AD_BONUS_POINTS}`}
+              handlePress={handleWatchAdPress}
+              containerStyles="w-[310px] m-1"
+              textStyles={"font-pbold text-white"}
+              isLoading={showRewardAd}
+            />
+          )}
+          {bonusEarned && (
+            <Text className="text-center text-xl text-[#FEDA42] font-pbold">
+              +{AD_BONUS_POINTS} bonus points added!
             </Text>
           )}
-          {offlineComparison && (
-            <Text className="text-white/80 text-center text-xs mt-1">
-              Offline comparison: {offlineComparison.healthGap >= 0 ? "+" : ""}{offlineComparison.healthGap}% health vs {offlineGarden.plantName}.
-            </Text>
-          )}
-        </View>
 
-        {!isPremiumUser && !bonusEarned && (
-          <CustomButton
-            title={`🎁 Watch Ad to Earn +${AD_BONUS_POINTS}`}
-            handlePress={handleWatchAdPress}
-            containerStyles="w-[310px] m-1"
-            textStyles={"font-pbold text-white"}
-            isLoading={showRewardAd}
-          />
-        )}
-        {bonusEarned && (
-          <Text className="text-center text-xl text-[#FEDA42] font-pbold">
-            +{AD_BONUS_POINTS} bonus points added!
-          </Text>
-        )}
+          <View className="flex-row justify-between gap-4 m-3">
+            <CustomButton
+              title={t("buttons.keep_going")}
+              handlePress={() => router.replace("/(screens)/selectSeed")}
+              containerStyles="w-[150px]"
+              textStyles={"font-pbold text-white"}
+              isLoading={isSubmitting}
+            />
+            <CustomButton
+              title={t("buttons.exit_to_menu")}
+              handlePress={() => router.replace("/(tabs)/home")}
+              containerStyles="w-[150px]"
+              textStyles={"font-pbold text-white"}
+              isLoading={isSubmitting}
+            />
+          </View>
 
-        <View className="flex-row justify-between gap-4 m-3">
-          <CustomButton
-            title={t("buttons.keep_going")}
-            handlePress={() => router.replace("/(screens)/selectSeed")}
-            containerStyles="w-[150px]"
+          {/* <CustomButton
+            title="Harvest"
+            handlePress={updateLevel}
+            containerStyles="w-[200px] mb-1"
             textStyles={"font-pbold text-white"}
             isLoading={isSubmitting}
-          />
-          <CustomButton
-            title={t("buttons.exit_to_menu")}
-            handlePress={() => router.replace("/(tabs)/home")}
-            containerStyles="w-[150px]"
-            textStyles={"font-pbold text-white"}
-            isLoading={isSubmitting}
-          />
+          /> */}
         </View>
-
-        {/* <CustomButton
-          title="Harvest"
-          handlePress={updateLevel}
-          containerStyles="w-[200px] mb-1"
-          textStyles={"font-pbold text-white"}
-          isLoading={isSubmitting}
-        /> */}
-      </View>
+      </ScrollView>
 
       {showRewardAd && (
         <RewardedAdComponent

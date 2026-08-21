@@ -1,0 +1,126 @@
+Farm Wizard App Privacy Policy
+Last Updated: March 22, 2025
+
+Thank you for choosing Farm Wizard App by Wizard Apps ("Company", "we", "us", or "our"). We are committed to protecting your personal information and your right to privacy. If you have questions or concerns about this Privacy Policy or our data practices, contact us at dinisoft.dev@gmail.com.
+
+This Privacy Policy applies to personal information collected through the Farm Wizard App and related services, sales, marketing, support, or events (collectively, the "Services"). If you do not agree with this Privacy Policy, please discontinue use of the Services.
+
+1. Legal Basis and Compliance
+
+This Privacy Policy is designed to comply with the Nigeria Data Protection Act (NDPA) 2023. Because users may be located in different jurisdictions, we also consider applicable international privacy regulations, including the General Data Protection Regulation (GDPR) for European users and the California Consumer Privacy Act (CCPA) for U.S. users, where relevant.
+
+We process personal information on one or more of the following legal bases:
+
+- Consent, when you provide explicit permission for specific uses.
+- Contractual necessity, when processing is required to provide the Services.
+- Legal obligation, when we must comply with legal or regulatory requirements.
+- Legitimate interest, when processing is necessary for business operations and does not override your rights.
+
+2. Information We Collect
+
+We may automatically collect certain information when you use or navigate the App. This information may not directly identify you, but it can include:
+
+- Log and usage data, including IP address, device information, browser type and settings, activity in the App, timestamps, pages viewed, feature usage, crash reports, and device event information.
+- Device data, including device and application identification numbers, hardware model, operating system, internet service provider, and mobile carrier.
+- Location data, including precise or approximate location depending on your device settings. You can disable location access through your device settings.
+- Mobile device access, such as camera, contacts, storage, or other permissions requested by App features. You can modify or revoke access through your device settings.
+- Push notification permissions for account updates, App features, reminders, and related communications. You can disable notifications through your device settings.
+- Cookies and similar tracking technologies used for analytics, security, fraud prevention, advertising, and service improvement.
+
+3. How We Use Your Information
+
+We use the information we collect to:
+
+- Provide, operate, and improve the Services.
+- Send administrative information, product updates, security alerts, support messages, and policy updates.
+- Secure the Services, monitor for fraud, and prevent unauthorized access.
+- Enforce our terms, conditions, and policies.
+- Fulfill and manage orders, payments, rewards, withdrawals, returns, and exchanges.
+- Administer promotions, competitions, rewards, and App features.
+- Respond to support inquiries and user requests.
+- Send marketing and promotional communications where permitted; you may opt out at any time.
+- Deliver targeted advertising and measure advertising effectiveness.
+- Analyze usage trends and improve App performance using aggregated or anonymized information where possible.
+
+4. When We Share Your Information
+
+We only share personal information when necessary and legally permitted, including:
+
+- With your consent.
+- To comply with laws, legal processes, or regulatory obligations.
+- To provide the Services and fulfill business obligations.
+- To protect rights, safety, security, and prevent fraud.
+- In connection with a merger, acquisition, financing, business transfer, or asset sale.
+- With third-party reward, advertising, analytics, payment, hosting, and service providers who support App operations.
+- With offer wall or reward partners when you choose to interact with those features. Certain information such as user ID, geographic location, or demographic details may be shared to prevent fraud and track rewards.
+
+When you click or use a third-party offer, website, or service, you may leave the App. Those third parties operate independently, and their own privacy policies and terms apply.
+
+5. Cookies and Tracking Technologies
+
+We may use cookies, web beacons, pixels, local storage, mobile identifiers, analytics tools, and similar technologies to improve the user experience, understand usage, prevent fraud, monitor performance, and deliver relevant advertising. Where required by law, we will request consent before using certain tracking technologies. You may withdraw consent or limit tracking through your device, browser, or platform settings.
+
+6. International Transfers
+
+Our operations are based in Nigeria, and we comply with Nigerian data protection laws, including NDPA 2023. If you access the Services from outside Nigeria, your information may be transferred to, stored, and processed in Nigeria or other countries where we or our service providers operate.
+
+For users in the European Economic Area, the United Kingdom, Switzerland, or other regions with strict data protection laws, we take appropriate measures to protect transferred data, including standard contractual clauses or other lawful transfer mechanisms where required.
+
+7. Third-Party Links, Ads, and Services
+
+The App may contain advertisements, links, offer walls, integrations, or services provided by third parties. We do not control and are not responsible for third-party content, privacy practices, security, or policies. Review third-party privacy policies before providing personal information to them.
+
+8. Data Retention
+
+We keep personal information only as long as necessary for the purposes described in this Privacy Policy unless a longer retention period is required or permitted by law.
+
+- General user data may be retained for up to two years after your last interaction with the App unless a longer period is required by law.
+- Legal, financial, reward, withdrawal, fraud-prevention, and contractual records may be retained as needed to comply with legal obligations, resolve disputes, enforce agreements, and maintain platform integrity.
+- Backup and security data may be isolated from active systems until deletion is feasible.
+
+When information is no longer needed, we will delete it securely or anonymize it so it can no longer be linked to you.
+
+9. Security
+
+We use technical, organizational, and administrative safeguards designed to protect personal information, including access controls, encryption where appropriate, security reviews, and operational safeguards. However, no electronic transmission or storage system is completely secure. If you believe your account or information has been compromised, contact us at dinisoft.dev@gmail.com.
+
+10. Your Privacy Rights
+
+Depending on your location, you may have rights under NDPA 2023, GDPR, CCPA, and other applicable laws, including the right to:
+
+- Access a copy of personal information we hold about you.
+- Correct inaccurate or incomplete information.
+- Request deletion of your personal information, subject to legal limitations.
+- Restrict or object to certain processing.
+- Request data portability where applicable.
+- Withdraw consent at any time where processing is based on consent.
+- Opt out of marketing communications.
+
+To exercise privacy rights, contact us at dinisoft.dev@gmail.com. We may need to verify your identity before fulfilling a request. We will respond within 30 days or within the timeframe required by applicable law.
+
+11. Do-Not-Track Signals
+
+Some browsers and mobile systems offer Do-Not-Track settings. Because there is no universally accepted standard for responding to these signals, we do not currently respond to Do-Not-Track signals. If a standard is adopted, we will update this Privacy Policy accordingly.
+
+12. California Privacy Rights
+
+California residents may request information about certain disclosures of personal information to third parties for direct marketing purposes under California Civil Code Section 1798.83. If you are under 18 and have a registered account, you may request removal of personal information you publicly posted in the App, subject to legal limitations.
+
+To make a California privacy request, contact dinisoft.dev@gmail.com with the email associated with your account and a statement confirming that you are a California resident.
+
+13. Children's Privacy
+
+Farm Wizard App is not intended to knowingly collect personal information from children where parental consent is required by applicable law. If you believe a child has provided personal information without appropriate consent, contact us at dinisoft.dev@gmail.com so we can take appropriate action.
+
+14. Updates to This Privacy Policy
+
+We may update this Privacy Policy from time to time to reflect changes in our practices, technologies, legal requirements, or business operations. The updated version will be indicated by a revised "Last Updated" date. If we make material changes, we may notify users through the App or other appropriate communication channels.
+
+15. Contact Us
+
+If you have questions, concerns, or requests about this Privacy Policy or your personal information, contact us at:
+
+Wizard Apps
+Email: dinisoft.dev@gmail.com
+Postal Address: Block AB9, Damax Plaza, Umaru Musa Yar'adua Way, Millenium City, Kaduna State, Nigeria
+Postcode: 800102

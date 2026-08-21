@@ -1,6 +1,6 @@
 import client from "@/config/client";
 
-export const submitWithdrwal = async (
+export const submitWithdrawal = async (
   amount: number,
   destination: string,
   provider: string,
@@ -50,3 +50,6 @@ export const fetchWithdrawals = async (token: string) => {
     throw error;
   }
 };
+
+// Backward-compatible alias for existing imports.
+export const submitWithdrwal = submitWithdrawal;

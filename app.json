@@ -23,7 +23,7 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.grow.farmwizard",
-      "versionCode": 21,
+      "versionCode": 23,
       "googleServicesFile": "./google-services.json"
     },
     "web": {
@@ -55,7 +55,8 @@
           "android": {
             "compileSdkVersion": 36,
             "targetSdkVersion": 36,
-            "buildToolsVersion": "36.0.0"
+            "buildToolsVersion": "36.0.0",
+            "useLegacyPackaging": false
           }
         }
       ]

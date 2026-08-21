@@ -18,7 +18,7 @@ import BackgroundImage from "@/components/BackgroundImage";
 import HeaderNavigation from "@/components/HeaderNavigation";
 import { router } from "expo-router";
 import { CustomButton, FormField } from "@/components";
-import { submitWithdrwal } from "@/services/withdrawal";
+import { submitWithdrawal as submitWithdrawalRequest } from "@/services/withdrawal";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 const { height } = Dimensions.get("window");
 import uuid from "react-native-uuid";
@@ -112,10 +112,8 @@ const dataBundle = [
 
 const ClaimScreen = () => {
   const { user, setUser } = useLoginContext();
-  if (!user) {
-    router.replace("/");
-  }
-  const isAdmin = user?.userType === "admin";
+  const { t } = useTranslation();
+
   const [activeTab, setActiveTab] = useState<keyof typeof providers>("Garden Grants");
   const [selectedProvider, setSelectedProvider] = useState<Provider>();
   const [modalVisible, setModalVisible] = useState(false);
@@ -124,12 +122,19 @@ const ClaimScreen = () => {
   const [selectedAmount, setSelectedAmount] = useState(0);
   const [isSubmitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
-    amount: user.usdBalance,
+    amount: user?.usdBalance ?? 0,
     phoneNo: "",
     data: "",
     network: "Seed preference",
   });
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
+
+  if (!user) {
+    router.replace("/");
+    return null;
+  }
+
+  const isAdmin = user.userType === "admin";
 
   const handleTabChange = (tab: "Garden Grants" | "Airtime" | "Data bundle") => {
     setActiveTab(tab);
@@ -186,12 +191,14 @@ const ClaimScreen = () => {
   };
 
   const submitWithdrawal = async () => {
-    const usdConversion = (Number(user?.score * 0.01) / 1000).toFixed(8);
+    if (isSubmitting) {
+      return;
+    }
 
-    if (Number(usdConversion) < 1) {
+    if (!isEligible) {
       Alert.alert(
         t("messages.warning"),
-        `You don't have enough WZP point to perform this operation`
+        `You need at least ${MIN_WIZ.toLocaleString()} WizPoints ($${MIN_USD}) before submitting a claim.`
       );
       return;
     }
@@ -205,12 +212,16 @@ const ClaimScreen = () => {
     const provider = selectedNetwork ? selectedNetwork : selectedProvider?.name;
     if (
       (type === "Garden Grants" || type === "Data bundle" || type === "Airtime") &&
-      !form.phoneNo
+      !form.phoneNo.trim()
     ) {
       Alert.alert("Error", "Please fill in all fields");
       return;
     }
-    if (type === "Garden Grants" && provider === "Crypto" && !form.network) {
+    if (type === "Garden Grants" && provider === "PayPal" && !form.phoneNo.includes("@")) {
+      Alert.alert("Error", "Please enter a valid PayPal email address");
+      return;
+    }
+    if (type === "Garden Grants" && provider === "Crypto" && !form.network.trim()) {
       Alert.alert("Error", "Please enter the crypto network type");
       return;
     }
@@ -228,46 +239,58 @@ const ClaimScreen = () => {
       return;
     }
 
-    setSubmitting(true);
     const token = await AsyncStorage.getItem("token");
-    if (token !== null) {
-      try {
-        const result = await submitWithdrwal(
-          // Number(form.amount),
-          Number(user?.score),
-          form.phoneNo,
-          provider,
-          type,
-          reference,
-          form.network,
-          token
-        );
-        if (result.status !== 200 || result.data.success === false) {
-          Alert.alert(t("messages.warning"), result.data.message);
-          // console.log("withdrawal", result.data.withdrawal);
-          setTimeout(() => {
-            router.push({
-              pathname: "/(tabs)/(sub-tabs)/requestReceived",
-              params: {
-                createdAt: result.data.withdrawal.createdAt,
-                amount: result.data.withdrawal.amount,
-                reference: result.data.withdrawal.reference,
-              },
-            });
-          }, 2000);
-          return;
-        }
+    if (!token) {
+      Alert.alert("Error", "Please sign in again before submitting a claim.");
+      return;
+    }
 
-        Alert.alert("Success", result.data.message);
-        setTimeout(() => {
-          router.replace("/(screens)/transactionSuccess");
-        }, 2000);
-        setUser(result.data.data.userDetails);
-      } catch (error: any) {
-        Alert.alert("Error occured", error.message);
-      } finally {
-        setSubmitting(false);
+    setSubmitting(true);
+    try {
+      const result = await submitWithdrawalRequest(
+        // Number(form.amount),
+        Number(user?.score),
+        form.phoneNo.trim(),
+        provider,
+        type,
+        reference,
+        form.network.trim(),
+        token
+      );
+      const withdrawal = result.data?.withdrawal;
+      const updatedUser = result.data?.data?.userDetails ?? result.data?.userDetails;
+
+      if (result.status < 200 || result.status >= 300 || result.data?.success === false) {
+        Alert.alert(t("messages.warning"), result.data?.message ?? "Unable to submit claim");
+        return;
       }
+
+      Alert.alert("Success", result.data?.message ?? "Claim submitted successfully");
+      if (updatedUser) {
+        setUser(updatedUser);
+      }
+
+      setTimeout(() => {
+        if (withdrawal) {
+          router.push({
+            pathname: "/(tabs)/(sub-tabs)/requestReceived",
+            params: {
+              createdAt: withdrawal.createdAt,
+              amount: withdrawal.amount,
+              reference: withdrawal.reference,
+            },
+          });
+        } else {
+          router.replace("/(screens)/transactionSuccess");
+        }
+      }, 2000);
+    } catch (error: any) {
+      Alert.alert(
+        "Error occurred",
+        error?.response?.data?.message ?? error?.message ?? "Unable to submit claim"
+      );
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -277,27 +300,30 @@ const ClaimScreen = () => {
       return;
     }
 
-    setSubmitting(true);
     const token = await AsyncStorage.getItem("token");
-    if (token !== null) {
-      try {
-        const result = await submitConversion(token, Number(user.score));
-        // console.log("result ", result.data.userDetails);
-        if (result.status !== 200) {
-          Alert.alert("Warning!", result.data.message);
-          return;
-        }
+    if (!token) {
+      Alert.alert("Error", "Please sign in again before submitting a claim.");
+      return;
+    }
 
-        Alert.alert("Success", result.data.message);
-        setTimeout(() => {
-          router.replace("/(screens)/transactionSuccess");
-        }, 2000);
-        setUser(result.data.userDetails);
-      } catch (error: any) {
-        Alert.alert("Error occured", error.message);
-      } finally {
-        setSubmitting(false);
+    setSubmitting(true);
+    try {
+      const result = await submitConversion(token, Number(user.score));
+      // console.log("result ", result.data.userDetails);
+      if (result.status !== 200) {
+        Alert.alert("Warning!", result.data.message);
+        return;
       }
+
+      Alert.alert("Success", result.data.message);
+      setTimeout(() => {
+        router.replace("/(screens)/transactionSuccess");
+      }, 2000);
+      setUser(result.data.userDetails);
+    } catch (error: any) {
+      Alert.alert("Error occured", error.message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -308,8 +334,6 @@ const ClaimScreen = () => {
       router.push("/(tabs)/(sub-tabs)/userWithdrawals");
     }
   };
-  const { t } = useTranslation();
-
   // WizPoints -> USD: 1000 WZP = $0.01  (score * 0.01 / 1000)
   const wizPoints = Number(user?.score) || 0;
   const usdValue = (wizPoints * 0.01) / 1000;

@@ -7,18 +7,15 @@ import {
   ScrollView,
   Dimensions,
   Alert,
-  Image,
   TouchableOpacity,
   ActivityIndicator,
 } from "react-native";
 import { UserRound } from "lucide-react-native";
 
-import { images } from "../../constants";
 import { CustomButton, FormField } from "../../components";
 
 import { useLoginContext } from "@/context/LoginProvider";
-import { signInUser, signUpUser } from "../../services/auth";
-import BackgroundImage from "../../components/BackgroundImage";
+import { signInAsGuest, signInUser } from "../../services/auth";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
@@ -26,6 +23,7 @@ import uuid from "react-native-uuid";
 
 // Stored so the same device always signs back into the same guest account
 const ANON_CREDENTIALS_KEY = "anonymous-credentials";
+const GUEST_DEVICE_ID_KEY = "guest-device-id";
 
 
 const SignIn = () => {
@@ -37,58 +35,36 @@ const SignIn = () => {
     password: "",
   });
 
-  // Creates (once per device) and signs into a guest account whose details
-  // are generated from device data — no form filling required.
+  // The API owns guest-account creation and returns a session in one request.
+  // This avoids a partially-created account being treated as a failed sign-up.
   const submitAnonymous = async () => {
     setAnonSubmitting(true);
     try {
-      let creds = null;
+      // Keep supporting a guest account created by older app versions.
+      let legacyCredentials = null;
       const stored = await AsyncStorage.getItem(ANON_CREDENTIALS_KEY);
-      if (stored) creds = JSON.parse(stored);
+      if (stored) legacyCredentials = JSON.parse(stored);
 
-      if (!creds) {
-        const deviceId = uuid.v4().replace(/-/g, "").slice(0, 10);
-        const deviceName = (Constants.deviceName || "Wizard")
-          .replace(/[^a-zA-Z0-9 ]/g, "")
-          .trim()
-          .slice(0, 18);
-        creds = {
-          fullName: `${deviceName || "Wizard"} ${deviceId.slice(0, 4)}`,
-          email: `guest-${deviceId}@farmwizard.app`.toLowerCase(),
-          password: String(uuid.v4()),
-        };
-        const reg = await signUpUser(
-          creds.fullName,
-          creds.email,
-          creds.password,
-          "english",
-          "ng",
-          Math.floor(Math.random() * 4) + 1
-        );
-        if (!reg || reg.status !== 200 || reg.data?.success === false) {
-          Alert.alert(
-            "Error",
-            reg?.data?.message ||
-              "Could not create a guest account, please try again."
-          );
+      if (legacyCredentials) {
+        const legacyResult = await signInUser(legacyCredentials.email, legacyCredentials.password);
+        if (legacyResult?.data?.success) {
+          setUser(legacyResult.data.data.user);
+          setIsLogged(true);
+          router.replace("/(tabs)/home");
           return;
         }
-        await AsyncStorage.setItem(ANON_CREDENTIALS_KEY, JSON.stringify(creds));
+        await AsyncStorage.removeItem(ANON_CREDENTIALS_KEY);
       }
 
-      const result = await signInUser(creds.email, creds.password);
-      if (result === undefined) {
-        Alert.alert("Error", "Server Down, please try again later");
-        return;
+      let deviceId = await AsyncStorage.getItem(GUEST_DEVICE_ID_KEY);
+      if (!deviceId) {
+        deviceId = String(uuid.v4());
+        await AsyncStorage.setItem(GUEST_DEVICE_ID_KEY, deviceId);
       }
-      if (result?.data?.success === false) {
-        // Stored guest account no longer valid (e.g. deleted server-side):
-        // clear it so the next tap creates a fresh one.
-        await AsyncStorage.removeItem(ANON_CREDENTIALS_KEY);
-        Alert.alert(
-          "Error",
-          "Guest session expired, please tap Continue as Guest again."
-        );
+      const deviceName = (Constants.deviceName || "9tel").slice(0, 24);
+      const result = await signInAsGuest(deviceId, deviceName);
+      if (!result?.data?.success || !result.data?.data?.user) {
+        Alert.alert("Guest sign-in", result?.data?.message || "Unable to start a guest session. Please try again.");
         return;
       }
       setUser(result.data.data.user);
@@ -144,8 +120,7 @@ const SignIn = () => {
   const { t } = useTranslation();
 
   return (
-    <SafeAreaView className="bg-primary h-full">
-      <BackgroundImage source={images.background} />
+    <SafeAreaView className="bg-[#171342] h-full">
       <ScrollView>
         <View
           className="w-full flex justify-center h-full px-4 my-6"
@@ -153,24 +128,20 @@ const SignIn = () => {
             minHeight: Dimensions.get("window").height - 100,
           }}
         >
-          <View className="flex flex-row justify-center mb-2">
-            <Image
-              source={images.logoLg}
-              resizeMode="contain"
-              className="w-[200px] h-[200px]"
-            />
+          <View className="mb-8 mt-4">
+            <Text className="text-white text-[38px] font-pbold tracking-tight">9tel</Text>
+            <Text className="text-[#CFCBFF] text-base font-pregular mt-1">Simple, secure and always connected.</Text>
           </View>
 
-          {/* <Text className="text-2xl font-semibold text-white mt-10 font-psemibold">
-            Log in to Farm Wizard
-          </Text> */}
+          <Text className="text-white text-2xl font-psemibold">Welcome back</Text>
+          <Text className="text-[#CFCBFF] text-sm font-pregular mt-1">Sign in to manage your account.</Text>
 
           <FormField
             title={t("email")}
             value={form.email}
             placeholder="e.g. yourname@gmail.com"
             handleChangeText={(e) => setForm({ ...form, email: e })}
-            otherStyles="mt-7"
+            otherStyles="mt-8"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -184,7 +155,7 @@ const SignIn = () => {
             placeholder="Password"
             value={form.password}
             handleChangeText={(e) => setForm({ ...form, password: e })}
-            otherStyles="mt-7"
+            otherStyles="mt-5"
             autoCapitalize="none"
             autoCorrect={false}
             textContentType="password"

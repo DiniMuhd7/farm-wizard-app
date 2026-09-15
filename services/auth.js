@@ -37,6 +37,7 @@ export const signUpUser = async (
     return response;
   } catch (error) {
     console.log("Error inside singup method", error.message);
+    throw error;
   }
 };
 
@@ -64,7 +65,22 @@ export const signInUser = async (email, password) => {
     return response;
   } catch (error) {
     console.log("Error inside singin method", error.message);
+    throw error;
   }
+};
+
+export const signInAsGuest = async (deviceId, deviceName) => {
+  const response = await client.post(
+    "/auth/guest",
+    { deviceId, deviceName },
+    { headers: { "Content-Type": "application/json" } }
+  );
+
+  if (response.data?.success && response.data?.data?.token) {
+    await AsyncStorage.setItem("token", response.data.data.token);
+  }
+
+  return response;
 };
 
 export const signOut = async () => {

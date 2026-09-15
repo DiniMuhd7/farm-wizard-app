@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "9tel",
-    "slug": "farm-wizard-app",
+    "slug": "farm-wizard",
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",

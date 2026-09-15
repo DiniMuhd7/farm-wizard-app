@@ -7,18 +7,15 @@ import {
   ScrollView,
   Dimensions,
   Alert,
-  Image,
   TouchableOpacity,
   ActivityIndicator,
 } from "react-native";
 import { UserRound } from "lucide-react-native";
 
-import { images } from "../../constants";
 import { CustomButton, FormField } from "../../components";
 
 import { useLoginContext } from "@/context/LoginProvider";
 import { signInUser, signUpUser } from "../../services/auth";
-import BackgroundImage from "../../components/BackgroundImage";
 import { useTranslation } from "react-i18next";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Constants from "expo-constants";
@@ -144,8 +141,7 @@ const SignIn = () => {
   const { t } = useTranslation();
 
   return (
-    <SafeAreaView className="bg-primary h-full">
-      <BackgroundImage source={images.background} />
+    <SafeAreaView className="bg-[#171342] h-full">
       <ScrollView>
         <View
           className="w-full flex justify-center h-full px-4 my-6"
@@ -153,24 +149,20 @@ const SignIn = () => {
             minHeight: Dimensions.get("window").height - 100,
           }}
         >
-          <View className="flex flex-row justify-center mb-2">
-            <Image
-              source={images.logoLg}
-              resizeMode="contain"
-              className="w-[200px] h-[200px]"
-            />
+          <View className="mb-8 mt-4">
+            <Text className="text-white text-[38px] font-pbold tracking-tight">9tel</Text>
+            <Text className="text-[#CFCBFF] text-base font-pregular mt-1">Simple, secure and always connected.</Text>
           </View>
 
-          {/* <Text className="text-2xl font-semibold text-white mt-10 font-psemibold">
-            Log in to Farm Wizard
-          </Text> */}
+          <Text className="text-white text-2xl font-psemibold">Welcome back</Text>
+          <Text className="text-[#CFCBFF] text-sm font-pregular mt-1">Sign in to manage your account.</Text>
 
           <FormField
             title={t("email")}
             value={form.email}
             placeholder="e.g. yourname@gmail.com"
             handleChangeText={(e) => setForm({ ...form, email: e })}
-            otherStyles="mt-7"
+            otherStyles="mt-8"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -184,7 +176,7 @@ const SignIn = () => {
             placeholder="Password"
             value={form.password}
             handleChangeText={(e) => setForm({ ...form, password: e })}
-            otherStyles="mt-7"
+            otherStyles="mt-5"
             autoCapitalize="none"
             autoCorrect={false}
             textContentType="password"

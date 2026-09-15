@@ -1,427 +1,107 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { View, Image, BackHandler, ToastAndroid, Platform, TouchableOpacity, Modal, Text, Dimensions, ScrollView, TouchableWithoutFeedback, Alert } from "react-native";
-import { icons, images } from "../../constants";
-import { router, useFocusEffect } from "expo-router";
-import RewardModal from "@/components/RewardModal";
-import { CustomButton } from "../../components";
-import { useLoginContext } from "../../context/LoginProvider";
-import { BlurView } from "expo-blur";
-import RewardedAdComponent from '../../utils/RewardedAdComponent';
-import { useFramedAvatarArray } from "../../hooks/useAvatarArray";
-import { canShowRewardedAd, getRemainingAdViews } from "@/utils/adLimit";
-import { useTranslation } from "react-i18next";
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import { playSound } from "../../utils/audio";
-import { Audio } from "expo-av";
-import { API_BASE } from "@/config/client";
-import { getUser } from "@/services/user";
-import { notifyNewAppNotifications, registerPushToken, scheduleSmartEngagementNudge } from "@/utils/notifications";
-import { getIdle, collectIdle } from "@/services/rewardsApi";
-const { height } = Dimensions.get("window");
-import analytics from "@react-native-firebase/analytics";
+import { useState } from "react";
+import {
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { Redirect, router } from "expo-router";
+import { Bell, ChevronRight, CircleHelp, Gift, Send, Smartphone, Wallet } from "lucide-react-native";
+import { useLoginContext } from "@/context/LoginProvider";
 
+const quickActions = [
+  { label: "Airtime", icon: Smartphone, color: "#E5E0FF", route: "/(screens)/inventory" },
+  { label: "Data", icon: Send, color: "#CBF1E3", route: "/(screens)/selectSeed" },
+  { label: "Transfer", icon: Wallet, color: "#FFE6C5", route: "/(tabs)/(sub-tabs)/withdrawalRequest" },
+  { label: "More", icon: CircleHelp, color: "#DCEBFF", route: "/(screens)/shorts" },
+];
 
-const REWARD_ADS_VIEW_LIMIT = 3
-export default Home = () => {
-  const { user, setUser } = useLoginContext();
-  if (!user) {
-    router.replace('/');
-  }
-  const isPremiumUser = user?.isPremium === true;
-  // const isPremiumUser = ['pro', 'vip'].includes(user?.subscriptionLevel);
-  // const isPremiumUser = new Date(user?.premiumUntil) > new Date();
-  // const [showAd, setShowAd] = useState(true);
-  const [showAd, setShowAd] = useState(false);
-  const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
-  const [showNotifcation, setShowNotification] = useState(false);
-  const [backPressedOnce, setBackPressedOnce] = useState(false);
-  const [remainingViews, setRemainingViews] = useState(null);
-  const [idlePending, setIdlePending] = useState(0);
-  const [collectingIdle, setCollectingIdle] = useState(false);
+export default function Home() {
+  const { user } = useLoginContext();
+  if (!user) return <Redirect href="/" />;
+  const [balanceVisible, setBalanceVisible] = useState(true);
+  const name = user?.fullName?.split(" ")[0] || "there";
+  const points = Number(user?.score || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
 
-  const timeoutRef = useRef(null);
-
-  // Idle/offline earning: how much the farm earned while away
-  const fetchIdle = async () => {
-    try {
-      const data = await getIdle();
-      if (data?.success) setIdlePending(data.pending || 0);
-    } catch (e) {
-      // ignore (offline / not deployed yet)
-    }
-  };
-
-  const handleCollectIdle = async () => {
-    if (collectingIdle) return;
-    setCollectingIdle(true);
-    try {
-      const res = await collectIdle();
-      if (res?.success) {
-        if (res.userDetails) setUser(res.userDetails);
-        setIdlePending(0);
-        if (res.granted > 0) {
-          Alert.alert("Collected", `🌾 +${res.granted} WizPoints from your farm!`);
-        } else if (res.message) {
-          Alert.alert("Idle reward", res.message);
-        }
-      }
-    } catch (e) {
-      // ignore
-    } finally {
-      setCollectingIdle(false);
-    }
-  };
-
-  const { t } = useTranslation();
-
-  const fetchNotification = async () => {
-    setLoading(true);
-    const token = await AsyncStorage.getItem("token");
-
-    if (token !== null) {
-      setLoading(true);
-      try {
-        const res = await fetch(
-          `${API_BASE}/api/v1/notification/all/`,
-          {
-            method: "GET",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `JWT ${token}`,
-            },
-          }
-        );
-        const json = await res.json();
-        setNotifications(json.notifications);
-        notifyNewAppNotifications(json.notifications);
-        scheduleSmartEngagementNudge({ harvests: 0 });
-      } catch (err) {
-        console.error("notifcations fetch error:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
-  };
-
-  useFocusEffect(
-    useCallback(() => {
-      fetchNotification();
-      const logEvent = async () => {
-        await analytics().logEvent("screen_view", {
-          screen_name: "HomeScreen",
-          screen_class: "HomeScreen",
-        });
-      };
-      const stopAllSounds = async () => {
-        try {
-          await Audio.setIsEnabledAsync(false);  // Stops all playing sounds
-          await Audio.setIsEnabledAsync(true);   // Re-enables audio after stop
-        } catch (e) {
-          console.warn("Failed to stop sounds:", e);
-        }
-      };
-      logEvent();
-      stopAllSounds();
-      if (Platform.OS !== 'android') return;
-
-      const onBackPress = () => {
-        if (backPressedOnce) {
-          BackHandler.exitApp();
-          return true;
-        }
-
-        setBackPressedOnce(true);
-        ToastAndroid.show('Press back again to exit', ToastAndroid.SHORT);
-
-        timeoutRef.current = setTimeout(() => {
-          setBackPressedOnce(false);
-        }, 2000);
-
-        return true;
-      };
-
-      const backHandler = BackHandler.addEventListener('hardwareBackPress', onBackPress);
-
-      return () => {
-        backHandler.remove();
-        if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      };
-    }, [backPressedOnce])
-  )
-  const openModal = () => {
-    setModalVisible(true);
-    // Animated.timing(fadeAnim, {
-    //   toValue: 1,
-    //   duration: 300,
-    //   useNativeDriver: true,
-    // }).start();
-  };
-  const handlsShowNotifcation = () => {
-    setShowNotification(!showNotifcation);
-  };
-
-  // Backend responses nest the user object differently across endpoints;
-  // accept any of the known shapes so the credited score always reaches the UI.
-  const extractUser = (json) =>
-    json?.userDetails ||
-    json?.data?.userDetails ||
-    json?.data?.user ||
-    json?.user;
-
-  const handleUserRewardEarn = async () => {
-    setLoading(true);
-    const token = await AsyncStorage.getItem("token");
-
-    if (token !== null) {
-      setLoading(true);
-      try {
-        const res = await fetch(
-          `${API_BASE}/api/v1/user/reward-earned`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `JWT ${token}`,
-            },
-            body: JSON.stringify({ amount: 50 }),
-          }
-        );
-        const json = await res.json();
-        if (!res.ok || json.success === false) {
-          Alert.alert("Reward", json.message || "Could not credit the reward, please try again.");
-          return;
-        }
-        const updated = extractUser(json);
-        if (updated) {
-          setUser(updated);
-        } else {
-          // Credited server-side but no user in the response — refresh it
-          const fresh = await getUser(user._id || user.id);
-          const freshUser = extractUser(fresh) || fresh;
-          if (freshUser && (freshUser.score !== undefined || freshUser.email)) {
-            setUser(freshUser);
-          }
-        }
-        Alert.alert("Reward", "🎉 +50 points added to your score!");
-      } catch (err) {
-        console.error("reward earn fetch error:", err);
-        Alert.alert("Reward", "Could not credit the reward, please check your connection.");
-      } finally {
-        setLoading(false);
-      }
-    }
-  }
-  const fetchRemainingViews = async () => {
-    const remaining = await getRemainingAdViews(REWARD_ADS_VIEW_LIMIT);
-    setRemainingViews(remaining);
-  };
-  const handleShowAd = async () => {
-    const allowed = await canShowRewardedAd(REWARD_ADS_VIEW_LIMIT);
-    if (allowed) {
-      setShowAd(true);
-    } else {
-      Alert.alert("Limit reached", "You have reached the daily ad limit.");
-    }
-  };
-  useEffect(() => {
-    fetchRemainingViews();
-  }, [showAd]);
-
-  // Register this device for server-sent push notifications once signed in.
-  useEffect(() => {
-    registerPushToken();
-    fetchIdle();
-  }, []);
+  const showNotice = (title) => Alert.alert(title, "This service will be available shortly.");
 
   return (
-    <View className="flex-1 relative bg-green-200 items-center justify-start">
-
-      {/* Background Image */}
-      <Image
-        source={images.background1}
-        className="absolute w-full h-full"
-        resizeMode="cover"
-        blurRadius={0.5}
-      />
-
-      {/* Top bar */}
-      <View className="w-full px-2 flex-row justify-between items-center mt-6">
-        <View className="flex-row">
-          <TouchableOpacity className="" onPress={() => router.push("/(tabs)/profile")}>
-            <Image
-              source={useFramedAvatarArray(user.avatar || 0)}
-              className="w-16 h-16 rounded-full"
-            />
+    <SafeAreaView style={styles.safe} edges={["top"]}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.topbar}>
+          <View>
+            <Text style={styles.greeting}>Good morning, {name}</Text>
+            <Text style={styles.subtitle}>Here is your account overview</Text>
+          </View>
+          <TouchableOpacity accessibilityLabel="Notifications" style={styles.bell} onPress={() => showNotice("No new notifications")}>
+            <Bell color="#171342" size={22} strokeWidth={2.4} />
+            <View style={styles.dot} />
           </TouchableOpacity>
-          <View className="flex my-4">
-            <Text className="text-white text-base">
-              {t("hi_user", { name: `${user.fullName}` })}
-            </Text>
-            <Text className="text-white text-base">{Number(user.score).toFixed(2)}</Text>
+        </View>
+
+        <View style={styles.balanceCard}>
+          <View style={styles.cardGlowOne} />
+          <View style={styles.cardGlowTwo} />
+          <Text style={styles.balanceLabel}>AVAILABLE BALANCE</Text>
+          <View style={styles.balanceRow}>
+            <Text style={styles.balance}>{balanceVisible ? `₦${points}.00` : "₦ ••••••"}</Text>
+            <TouchableOpacity onPress={() => setBalanceVisible((visible) => !visible)}>
+              <Text style={styles.hide}>{balanceVisible ? "Hide" : "Show"}</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.cardFooter}>
+            <Text style={styles.cardFooterText}>9tel wallet</Text>
+            <Text style={styles.cardMark}>9tel</Text>
           </View>
         </View>
-        <TouchableOpacity
-          className="bg-[#D5B85A] w-14 h-14 items-center justify-center rounded-full"
-          onPress={handlsShowNotifcation}
-        >
-          <Image source={icons.bell} className="w-8 h-10" />
-        </TouchableOpacity>
-      </View>
 
-      <View className="w-full px-5 flex-row justify-between items-center mt-10">
-        <TouchableOpacity className="w-10 h-10 bg-white/30 rounded-full items-center justify-center"
-          onPress={() => router.push("/(screens)/inventory")}
-        >
-          <Image source={images.inventory} className="w-20 h-20" />
-        </TouchableOpacity>
-        {/* Watch & Earn (short videos) */}
-        <TouchableOpacity
-          className="w-10 h-10 bg-white/30 rounded-full items-center justify-center"
-          onPress={() => router.push("/(screens)/shorts")}
-        >
-          <Image source={images.adsBadge} className="w-20 h-20" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Daily quests & achievements entry */}
-      <TouchableOpacity
-        className="bg-[#E0C145B8] px-5 py-2 rounded-full flex-row items-center mt-4"
-        onPress={() => router.push("/(screens)/questsAchievements")}
-      >
-        <Text className="text-white font-psemibold">🎯 Daily Quests & Badges</Text>
-      </TouchableOpacity>
-
-
-      {/* Watch & Earn is opened from the top-right icon */}
-
-      {/* Idle/offline earning */}
-      {idlePending > 0 && (
-        <TouchableOpacity
-          className="bg-green-700/80 px-5 py-2 rounded-full flex-row items-center mt-3"
-          onPress={handleCollectIdle}
-          disabled={collectingIdle}
-        >
-          <Text className="text-white font-psemibold">
-            {collectingIdle
-              ? "Collecting…"
-              : `🌾 Collect ${idlePending} WZP from your farm`}
-          </Text>
-        </TouchableOpacity>
-      )}
-
-      <View className="flex-1 justify-center items-center">
-        {/* Wizard Image */}
-        <Image
-          source={images.logoLg}
-          resizeMode="contain"
-          className="w-[250px] h-[250px]"
-        />
-
-        {/* Play Button */}
-
-        <CustomButton
-          title={t("buttons.play")}
-          handlePress={() => { router.push('/(screens)/selectSeed'); playSound(require('@/assets/sounds/click.mp3'), 0.05) }}
-          containerStyles="w-[200px]"
-          textStyles={"font-pbold text-white"}
-          isLoading={false}
-        />
-      </View>
-
-      {showAd && !isPremiumUser &&
-        <RewardedAdComponent
-          onRewardEarned={(reward) => {
-            //console.log('User earned:', reward);
-            setShowAd(false);
-            setModalVisible(false)
-            // Unlock feature or give coins here
-            handleUserRewardEarn()
-          }}
-          onClose={() => {
-            //console.log('Ad closed');
-          }}
-        />
-      }
-
-      <RewardModal
-        visible={modalVisible}
-        onClose={() => setModalVisible(false)}
-        onShowAd={handleShowAd}
-        remainingViews={remainingViews}
-      />
-
-      <Modal transparent visible={showNotifcation} animationType="fade">
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.3)', justifyContent: 'flex-start' }}>
-          {/* Modal Content */}
-          <BlurView
-            intensity={50}
-            tint="dark"
-            style={{
-              alignSelf: 'flex-end',
-              marginTop: 40,
-              marginRight: 20,
-              width: '80%',
-              borderRadius: 20,
-              overflow: 'hidden',
-              maxHeight: height * 0.45,
-            }}
-          >
-            <View
-              style={{
-                backgroundColor: 'rgba(0,0,0,0.1)',
-                borderRadius: 16,
-                padding: 16,
-              }}
-            >
-              {/* Close Button */}
-              <TouchableOpacity
-                onPress={handlsShowNotifcation}
-                style={{
-                  position: 'absolute',
-                  top: 10,
-                  right: 10,
-                  zIndex: 10,
-                  padding: 4,
-                }}
-              >
-                {/* If using icon library: <Icon name="close" size={24} color="#fff" /> */}
-                <Text style={{ fontSize: 20, color: '#fff' }}>✕</Text>
-              </TouchableOpacity>
-
-              <ScrollView
-                style={{ maxHeight: height * 0.45 }}
-                contentContainerStyle={{ paddingTop: 30, paddingBottom: 16 }}
-                showsVerticalScrollIndicator={true}
-              >
-                {notifications?.map((notification, index) => (
-                  <View
-                    key={index}
-                    style={{
-                      backgroundColor: '#7D6D3D',
-                      borderRadius: 12,
-                      paddingVertical: 8,
-                      paddingHorizontal: 16,
-                      marginBottom: 8,
-                    }}
-                  >
-                    <Text style={{ color: '#fff' }}>
-                      {notification.message}
-                    </Text>
-                    <Text style={{ color: '#FCD34D', fontWeight: '600', marginTop: 4 }}>
-                      {new Date(notification.createdAt).toLocaleString()}
-                    </Text>
-                  </View>
-                ))}
-              </ScrollView>
-            </View>
-          </BlurView>
+        <Text style={styles.sectionTitle}>Quick actions</Text>
+        <View style={styles.actionGrid}>
+          {quickActions.map(({ label, icon: Icon, color, route }) => (
+            <TouchableOpacity key={label} style={styles.action} onPress={() => router.push(route)} activeOpacity={0.78}>
+              <View style={[styles.actionIcon, { backgroundColor: color }]}><Icon color="#211B59" size={23} strokeWidth={2.3} /></View>
+              <Text style={styles.actionLabel}>{label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
 
-      </Modal>
+        <TouchableOpacity style={styles.offer} activeOpacity={0.85} onPress={() => router.push("/(screens)/dailyChallenge")}>
+          <View style={styles.offerIcon}><Gift color="#FFF" size={22} /></View>
+          <View style={styles.offerText}>
+            <Text style={styles.offerTitle}>Claim your welcome bonus</Text>
+            <Text style={styles.offerCaption}>Enjoy exclusive rewards made for you.</Text>
+          </View>
+          <ChevronRight color="#FFF" size={21} />
+        </TouchableOpacity>
 
-    </View>
+        <View style={styles.sectionRow}>
+          <Text style={styles.sectionTitle}>Recent activity</Text>
+          <TouchableOpacity onPress={() => router.push("/(tabs)/(sub-tabs)/userWithdrawals")}><Text style={styles.seeAll}>See all</Text></TouchableOpacity>
+        </View>
+        <View style={styles.activityCard}>
+          <View style={styles.activityIcon}><Wallet color="#5952A7" size={22} /></View>
+          <View style={styles.activityText}>
+            <Text style={styles.activityTitle}>Your wallet is ready</Text>
+            <Text style={styles.activityCaption}>Start by making your first transaction.</Text>
+          </View>
+          <ChevronRight color="#A5A2BA" size={20} />
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
-};
+}
 
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: "#F8F8FD" }, content: { padding: 20, paddingBottom: 112 },
+  topbar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 25 },
+  greeting: { color: "#171342", fontSize: 21, fontFamily: "Poppins-SemiBold" }, subtitle: { color: "#85829B", fontSize: 12, marginTop: 3, fontFamily: "Poppins-Regular" },
+  bell: { width: 46, height: 46, borderRadius: 16, backgroundColor: "#FFF", alignItems: "center", justifyContent: "center", shadowColor: "#28205F", shadowOpacity: 0.08, shadowRadius: 13, elevation: 3 }, dot: { position: "absolute", width: 8, height: 8, borderRadius: 4, backgroundColor: "#FF6B6B", top: 11, right: 12, borderWidth: 1.5, borderColor: "#FFF" },
+  balanceCard: { minHeight: 190, borderRadius: 27, backgroundColor: "#211B59", padding: 25, overflow: "hidden", marginBottom: 27 }, cardGlowOne: { position: "absolute", backgroundColor: "#695DDA", opacity: 0.6, height: 200, width: 200, borderRadius: 100, right: -68, top: -70 }, cardGlowTwo: { position: "absolute", borderColor: "#9A91F7", borderWidth: 24, opacity: 0.22, height: 155, width: 155, borderRadius: 80, right: 50, bottom: -104 },
+  balanceLabel: { color: "#D8D4FF", fontSize: 11, letterSpacing: 1.2, fontFamily: "Poppins-Medium" }, balanceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 9 }, balance: { color: "#FFF", fontSize: 31, fontFamily: "Poppins-SemiBold" }, hide: { color: "#F0EFFF", fontSize: 12, fontFamily: "Poppins-Medium", padding: 8 }, cardFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 32 }, cardFooterText: { color: "#D8D4FF", fontSize: 12, fontFamily: "Poppins-Regular" }, cardMark: { color: "#FFF", fontSize: 20, fontFamily: "Poppins-Bold", letterSpacing: -1 },
+  sectionTitle: { color: "#1F1B46", fontSize: 17, fontFamily: "Poppins-SemiBold" }, actionGrid: { flexDirection: "row", justifyContent: "space-between", marginTop: 17, marginBottom: 28 }, action: { alignItems: "center", width: "23%" }, actionIcon: { width: 57, height: 57, borderRadius: 20, alignItems: "center", justifyContent: "center" }, actionLabel: { color: "#393556", fontSize: 12, marginTop: 8, fontFamily: "Poppins-Medium" },
+  offer: { borderRadius: 20, backgroundColor: "#F06E5D", padding: 17, flexDirection: "row", alignItems: "center", marginBottom: 30 }, offerIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.20)", alignItems: "center", justifyContent: "center" }, offerText: { flex: 1, marginLeft: 12 }, offerTitle: { color: "#FFF", fontSize: 14, fontFamily: "Poppins-SemiBold" }, offerCaption: { color: "#FFF4F2", fontSize: 10.5, marginTop: 2, fontFamily: "Poppins-Regular" },
+  sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }, seeAll: { color: "#625BC1", fontSize: 12, fontFamily: "Poppins-Medium" }, activityCard: { backgroundColor: "#FFF", borderRadius: 18, padding: 15, flexDirection: "row", alignItems: "center", shadowColor: "#28205F", shadowOpacity: 0.06, shadowRadius: 12, elevation: 2 }, activityIcon: { width: 43, height: 43, borderRadius: 15, backgroundColor: "#F0EFFF", alignItems: "center", justifyContent: "center" }, activityText: { flex: 1, marginLeft: 12 }, activityTitle: { color: "#302C4C", fontSize: 13, fontFamily: "Poppins-Medium" }, activityCaption: { color: "#9693A9", fontSize: 10.5, marginTop: 2, fontFamily: "Poppins-Regular" },
+});

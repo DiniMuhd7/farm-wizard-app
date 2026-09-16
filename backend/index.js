@@ -20,6 +20,7 @@ const externalAPIs = require("./src/routes/external-apis");
 const cosmetics = require("./src/routes/cosmetics");
 const referral = require("./src/routes/referral");
 const shorts = require("./src/routes/shorts");
+const voice = require("./src/routes/voice");
 
 const app = express();
 
@@ -54,6 +55,7 @@ app.use("/api/v1/external-apis", externalAPIs);
 app.use("/api/v1/cosmetics", cosmetics);
 app.use("/api/v1/referral", referral);
 app.use("/api/v1/shorts", shorts);
+app.use("/api/v1/voice", voice);
 
 // Start Server
 const PORT = process.env.PORT || 5000;

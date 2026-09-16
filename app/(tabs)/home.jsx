@@ -3,6 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-nativ
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Bell, Delete, Globe2, Phone, Search, Video } from "lucide-react-native";
 import { router } from "expo-router";
+import { startVoiceCall } from "@/services/voice";
 
 const countryCodes = { NG: "+234", GB: "+44", US: "+1", CA: "+1", GH: "+233", KE: "+254", ZA: "+27" };
 const keys = [["1", ""], ["2", "ABC"], ["3", "DEF"], ["4", "GHI"], ["5", "JKL"], ["6", "MNO"], ["7", "PQRS"], ["8", "TUV"], ["9", "WXYZ"], ["*", ""], ["0", "+"], ["#", ""]];
@@ -19,9 +20,15 @@ export default function DialPad() {
       .catch(() => undefined);
   }, []);
 
-  const startCall = (video = false) => {
+  const startCall = async (video = false) => {
     if (!digits) return Alert.alert("Enter a number", "Choose a contact or enter the number you want to call.");
-    router.push({ pathname: "/(screens)/call", params: { number: `${country.code} ${number}`, video: video ? "true" : "false" } });
+    const destination = `${country.code}${digits}`;
+    try {
+      await startVoiceCall(destination);
+      router.push({ pathname: "/(screens)/call", params: { number: destination, video: video ? "true" : "false", activeCall: "true" } });
+    } catch (error) {
+      Alert.alert("Unable to start call", error instanceof Error ? error.message : "Please try again.");
+    }
   };
   return <SafeAreaView style={styles.safe} edges={["top"]}><View style={styles.page}>
     <View style={styles.topbar}><View><Text style={styles.brand}>9tel</Text><Text style={styles.welcome}>Crystal-clear calling, wherever you are.</Text></View><Pressable style={styles.iconButton}><Bell color="#211B59" size={21}/><View style={styles.notice}/></Pressable></View>

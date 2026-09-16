@@ -1,12 +1,27 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "@/config/client";
 
-// This package requires an Expo development build; it is not available in Expo Go.
-import { Voice } from "@twilio/voice-react-native-sdk";
-
 export type VoiceCall = { disconnect: () => Promise<void> | void };
+type VoiceSdk = {
+  connect(token: string, options: { params: { To: string } }): Promise<VoiceCall>;
+  register(token: string): Promise<void>;
+};
 
 let activeCall: VoiceCall | null = null;
+let voiceSdk: VoiceSdk | null = null;
+
+function getVoiceSdk(): VoiceSdk {
+  if (voiceSdk) return voiceSdk;
+
+  // Load the native module only when a user starts or registers a call. This
+  // keeps application boot independent of the optional native Voice module and
+  // lets the dialer show a useful error instead of crashing at startup.
+  // The package still requires an Expo development/production build, not Expo Go.
+  const sdk = require("@twilio/voice-react-native-sdk") as { Voice?: VoiceSdk };
+  if (!sdk?.Voice) throw new Error("Voice calling is not included in this build.");
+  voiceSdk = sdk.Voice;
+  return sdk.Voice;
+}
 
 async function accessToken() {
   const sessionToken = await AsyncStorage.getItem("token");
@@ -22,7 +37,7 @@ async function accessToken() {
 
 export async function startVoiceCall(destination: string): Promise<VoiceCall> {
   const token = await accessToken();
-  activeCall = await Voice.connect(token, { params: { To: destination } }) as VoiceCall;
+  activeCall = await getVoiceSdk().connect(token, { params: { To: destination } }) as VoiceCall;
   return activeCall;
 }
 
@@ -40,5 +55,5 @@ export async function endActiveVoiceCall() {
 
 export async function registerForIncomingCalls() {
   const token = await accessToken();
-  await Voice.register(token);
+  await getVoiceSdk().register(token);
 }

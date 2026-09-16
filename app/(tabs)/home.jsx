@@ -1,107 +1,41 @@
-import { useState } from "react";
-import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import { useEffect, useMemo, useState } from "react";
+import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Redirect, router } from "expo-router";
-import { Bell, ChevronRight, CircleHelp, Gift, Send, Smartphone, Wallet } from "lucide-react-native";
-import { useLoginContext } from "@/context/LoginProvider";
+import { Bell, Delete, Globe2, Phone, Search, Video } from "lucide-react-native";
+import { router } from "expo-router";
+import { startVoiceCall } from "@/services/voice";
 
-const quickActions = [
-  { label: "Airtime", icon: Smartphone, color: "#E5E0FF", route: "/(screens)/inventory" },
-  { label: "Data", icon: Send, color: "#CBF1E3", route: "/(screens)/selectSeed" },
-  { label: "Transfer", icon: Wallet, color: "#FFE6C5", route: "/(tabs)/(sub-tabs)/withdrawalRequest" },
-  { label: "More", icon: CircleHelp, color: "#DCEBFF", route: "/(screens)/shorts" },
-];
+const countryCodes = { NG: "+234", GB: "+44", US: "+1", CA: "+1", GH: "+233", KE: "+254", ZA: "+27" };
+const keys = [["1", ""], ["2", "ABC"], ["3", "DEF"], ["4", "GHI"], ["5", "JKL"], ["6", "MNO"], ["7", "PQRS"], ["8", "TUV"], ["9", "WXYZ"], ["*", ""], ["0", "+"], ["#", ""]];
 
-export default function Home() {
-  const { user } = useLoginContext();
-  if (!user) return <Redirect href="/" />;
-  const [balanceVisible, setBalanceVisible] = useState(true);
-  const name = user?.fullName?.split(" ")[0] || "there";
-  const points = Number(user?.score || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+export default function DialPad() {
+  const [country, setCountry] = useState({ name: "Nigeria", code: "+234" });
+  const [number, setNumber] = useState("");
+  const digits = useMemo(() => number.replace(/\D/g, ""), [number]);
 
-  const showNotice = (title) => Alert.alert(title, "This service will be available shortly.");
+  useEffect(() => {
+    fetch("https://ipapi.co/json/")
+      .then((response) => response.ok ? response.json() : Promise.reject())
+      .then((location) => setCountry({ name: location.country_name || "Nigeria", code: countryCodes[location.country_code] || "+234" }))
+      .catch(() => undefined);
+  }, []);
 
-  return (
-    <SafeAreaView style={styles.safe} edges={["top"]}>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.topbar}>
-          <View>
-            <Text style={styles.greeting}>Good morning, {name}</Text>
-            <Text style={styles.subtitle}>Here is your account overview</Text>
-          </View>
-          <TouchableOpacity accessibilityLabel="Notifications" style={styles.bell} onPress={() => showNotice("No new notifications")}>
-            <Bell color="#171342" size={22} strokeWidth={2.4} />
-            <View style={styles.dot} />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.balanceCard}>
-          <View style={styles.cardGlowOne} />
-          <View style={styles.cardGlowTwo} />
-          <Text style={styles.balanceLabel}>AVAILABLE BALANCE</Text>
-          <View style={styles.balanceRow}>
-            <Text style={styles.balance}>{balanceVisible ? `₦${points}.00` : "₦ ••••••"}</Text>
-            <TouchableOpacity onPress={() => setBalanceVisible((visible) => !visible)}>
-              <Text style={styles.hide}>{balanceVisible ? "Hide" : "Show"}</Text>
-            </TouchableOpacity>
-          </View>
-          <View style={styles.cardFooter}>
-            <Text style={styles.cardFooterText}>9tel wallet</Text>
-            <Text style={styles.cardMark}>9tel</Text>
-          </View>
-        </View>
-
-        <Text style={styles.sectionTitle}>Quick actions</Text>
-        <View style={styles.actionGrid}>
-          {quickActions.map(({ label, icon: Icon, color, route }) => (
-            <TouchableOpacity key={label} style={styles.action} onPress={() => router.push(route)} activeOpacity={0.78}>
-              <View style={[styles.actionIcon, { backgroundColor: color }]}><Icon color="#211B59" size={23} strokeWidth={2.3} /></View>
-              <Text style={styles.actionLabel}>{label}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <TouchableOpacity style={styles.offer} activeOpacity={0.85} onPress={() => router.push("/(screens)/dailyChallenge")}>
-          <View style={styles.offerIcon}><Gift color="#FFF" size={22} /></View>
-          <View style={styles.offerText}>
-            <Text style={styles.offerTitle}>Claim your welcome bonus</Text>
-            <Text style={styles.offerCaption}>Enjoy exclusive rewards made for you.</Text>
-          </View>
-          <ChevronRight color="#FFF" size={21} />
-        </TouchableOpacity>
-
-        <View style={styles.sectionRow}>
-          <Text style={styles.sectionTitle}>Recent activity</Text>
-          <TouchableOpacity onPress={() => router.push("/(tabs)/(sub-tabs)/userWithdrawals")}><Text style={styles.seeAll}>See all</Text></TouchableOpacity>
-        </View>
-        <View style={styles.activityCard}>
-          <View style={styles.activityIcon}><Wallet color="#5952A7" size={22} /></View>
-          <View style={styles.activityText}>
-            <Text style={styles.activityTitle}>Your wallet is ready</Text>
-            <Text style={styles.activityCaption}>Start by making your first transaction.</Text>
-          </View>
-          <ChevronRight color="#A5A2BA" size={20} />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+  const startCall = async (video = false) => {
+    if (!digits) return Alert.alert("Enter a number", "Choose a contact or enter the number you want to call.");
+    const destination = `${country.code}${digits}`;
+    try {
+      await startVoiceCall(destination);
+      router.push({ pathname: "/(screens)/call", params: { number: destination, video: video ? "true" : "false", activeCall: "true" } });
+    } catch (error) {
+      Alert.alert("Unable to start call", error instanceof Error ? error.message : "Please try again.");
+    }
+  };
+  return <SafeAreaView style={styles.safe} edges={["top"]}><View style={styles.page}>
+    <View style={styles.topbar}><View><Text style={styles.brand}>9tel</Text><Text style={styles.welcome}>Crystal-clear calling, wherever you are.</Text></View><Pressable style={styles.iconButton}><Bell color="#211B59" size={21}/><View style={styles.notice}/></Pressable></View>
+    <View style={styles.search}><Search color="#9894A9" size={19}/><TextInput value={number} onChangeText={setNumber} placeholder="Search contacts or enter number" placeholderTextColor="#9995A8" keyboardType="phone-pad" style={styles.searchInput}/></View>
+    <View style={styles.numberArea}><Pressable style={styles.countryPill} onPress={() => Alert.alert("Country code", `Your calling code is set to ${country.code}.`)}><Globe2 color="#625BC1" size={17}/><Text style={styles.countryText}>{country.code}</Text><Text style={styles.countryName}>{country.name}</Text></Pressable><Text style={styles.number}>{number || "Enter phone number"}</Text></View>
+    <View style={styles.pad}>{keys.map(([key, letters]) => <Pressable key={key} onPress={() => setNumber((value) => value + key)} style={styles.key}><Text style={styles.keyNumber}>{key}</Text><Text style={styles.letters}>{letters}</Text></Pressable>)}</View>
+    <View style={styles.callRow}><Pressable accessibilityLabel="Video call" onPress={() => startCall(true)} style={styles.video}><Video color="#625BC1" size={22}/></Pressable><Pressable accessibilityLabel="Start call" onPress={() => startCall(false)} style={styles.call}><Phone color="#FFF" size={26} fill="#FFF"/></Pressable><Pressable accessibilityLabel="Delete number" onPress={() => setNumber((value) => value.slice(0, -1))} style={styles.video}><Delete color="#625BC1" size={22}/></Pressable></View>
+  </View></SafeAreaView>;
 }
-
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: "#F8F8FD" }, content: { padding: 20, paddingBottom: 112 },
-  topbar: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 25 },
-  greeting: { color: "#171342", fontSize: 21, fontFamily: "Poppins-SemiBold" }, subtitle: { color: "#85829B", fontSize: 12, marginTop: 3, fontFamily: "Poppins-Regular" },
-  bell: { width: 46, height: 46, borderRadius: 16, backgroundColor: "#FFF", alignItems: "center", justifyContent: "center", shadowColor: "#28205F", shadowOpacity: 0.08, shadowRadius: 13, elevation: 3 }, dot: { position: "absolute", width: 8, height: 8, borderRadius: 4, backgroundColor: "#FF6B6B", top: 11, right: 12, borderWidth: 1.5, borderColor: "#FFF" },
-  balanceCard: { minHeight: 190, borderRadius: 27, backgroundColor: "#211B59", padding: 25, overflow: "hidden", marginBottom: 27 }, cardGlowOne: { position: "absolute", backgroundColor: "#695DDA", opacity: 0.6, height: 200, width: 200, borderRadius: 100, right: -68, top: -70 }, cardGlowTwo: { position: "absolute", borderColor: "#9A91F7", borderWidth: 24, opacity: 0.22, height: 155, width: 155, borderRadius: 80, right: 50, bottom: -104 },
-  balanceLabel: { color: "#D8D4FF", fontSize: 11, letterSpacing: 1.2, fontFamily: "Poppins-Medium" }, balanceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 9 }, balance: { color: "#FFF", fontSize: 31, fontFamily: "Poppins-SemiBold" }, hide: { color: "#F0EFFF", fontSize: 12, fontFamily: "Poppins-Medium", padding: 8 }, cardFooter: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 32 }, cardFooterText: { color: "#D8D4FF", fontSize: 12, fontFamily: "Poppins-Regular" }, cardMark: { color: "#FFF", fontSize: 20, fontFamily: "Poppins-Bold", letterSpacing: -1 },
-  sectionTitle: { color: "#1F1B46", fontSize: 17, fontFamily: "Poppins-SemiBold" }, actionGrid: { flexDirection: "row", justifyContent: "space-between", marginTop: 17, marginBottom: 28 }, action: { alignItems: "center", width: "23%" }, actionIcon: { width: 57, height: 57, borderRadius: 20, alignItems: "center", justifyContent: "center" }, actionLabel: { color: "#393556", fontSize: 12, marginTop: 8, fontFamily: "Poppins-Medium" },
-  offer: { borderRadius: 20, backgroundColor: "#F06E5D", padding: 17, flexDirection: "row", alignItems: "center", marginBottom: 30 }, offerIcon: { width: 42, height: 42, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.20)", alignItems: "center", justifyContent: "center" }, offerText: { flex: 1, marginLeft: 12 }, offerTitle: { color: "#FFF", fontSize: 14, fontFamily: "Poppins-SemiBold" }, offerCaption: { color: "#FFF4F2", fontSize: 10.5, marginTop: 2, fontFamily: "Poppins-Regular" },
-  sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }, seeAll: { color: "#625BC1", fontSize: 12, fontFamily: "Poppins-Medium" }, activityCard: { backgroundColor: "#FFF", borderRadius: 18, padding: 15, flexDirection: "row", alignItems: "center", shadowColor: "#28205F", shadowOpacity: 0.06, shadowRadius: 12, elevation: 2 }, activityIcon: { width: 43, height: 43, borderRadius: 15, backgroundColor: "#F0EFFF", alignItems: "center", justifyContent: "center" }, activityText: { flex: 1, marginLeft: 12 }, activityTitle: { color: "#302C4C", fontSize: 13, fontFamily: "Poppins-Medium" }, activityCaption: { color: "#9693A9", fontSize: 10.5, marginTop: 2, fontFamily: "Poppins-Regular" },
-});
+const styles = StyleSheet.create({ safe:{flex:1,backgroundColor:"#F8F8FD"},page:{flex:1,paddingHorizontal:20,paddingTop:8,paddingBottom:96},topbar:{flexDirection:"row",justifyContent:"space-between",alignItems:"center",marginBottom:24},brand:{color:"#211B59",fontFamily:"Poppins-Bold",fontSize:28,letterSpacing:-1.5},welcome:{color:"#85829B",fontFamily:"Poppins-Regular",fontSize:11.5,marginTop:-4},iconButton:{height:45,width:45,borderRadius:15,backgroundColor:"#FFF",alignItems:"center",justifyContent:"center",shadowColor:"#29205F",shadowOpacity:.09,shadowRadius:12,elevation:3},notice:{height:8,width:8,borderRadius:4,backgroundColor:"#FF6D63",position:"absolute",top:10,right:11,borderWidth:1,borderColor:"#FFF"},search:{height:54,borderRadius:18,backgroundColor:"#FFF",flexDirection:"row",alignItems:"center",paddingHorizontal:16,shadowColor:"#29205F",shadowOpacity:.05,shadowRadius:11,elevation:2},searchInput:{flex:1,marginLeft:10,color:"#211B59",fontFamily:"Poppins-Regular",fontSize:12},numberArea:{alignItems:"center",paddingTop:27,paddingBottom:15},countryPill:{flexDirection:"row",alignItems:"center",backgroundColor:"#EEECFF",paddingHorizontal:12,paddingVertical:7,borderRadius:13},countryText:{color:"#5147AF",fontFamily:"Poppins-SemiBold",fontSize:12,marginLeft:6},countryName:{color:"#7C7894",fontFamily:"Poppins-Regular",fontSize:11,marginLeft:7},number:{color:"#211B59",fontFamily:"Poppins-SemiBold",fontSize:27,marginTop:13,minHeight:39},pad:{flexDirection:"row",flexWrap:"wrap",marginHorizontal:12},key:{width:"33.33%",height:59,alignItems:"center",justifyContent:"center"},keyNumber:{color:"#211B59",fontFamily:"Poppins-Medium",fontSize:27,lineHeight:29},letters:{color:"#8F8BA3",fontFamily:"Poppins-Medium",fontSize:8,letterSpacing:1.5,height:10},callRow:{flexDirection:"row",alignItems:"center",justifyContent:"center",gap:27,marginTop:10},video:{height:51,width:51,borderRadius:18,backgroundColor:"#EEECFF",alignItems:"center",justifyContent:"center"},call:{height:68,width:68,borderRadius:25,backgroundColor:"#5F56C6",alignItems:"center",justifyContent:"center",shadowColor:"#5147B6",shadowOpacity:.35,shadowRadius:15,elevation:7} });

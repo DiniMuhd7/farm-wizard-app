@@ -41,6 +41,9 @@ app.use(
 app.get("/app-ads.txt", (req, res) => {
   res.sendFile(path.join(__dirname, "app-ads.txt"));
 });
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok" });
+});
 // Routes
 app.use("/api/v1/auth", auth);
 app.use("/api/v1/user", user);

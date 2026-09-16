@@ -87,25 +87,27 @@ const RootLayout = () => {
   }, [rootNavigationState?.key]);*/
 
   useEffect(() => {
-    // Initialize once at app startup
-    loadSavedLanguage();
-    initNotifications().then(() => scheduleComeBackReminder());
-    mobileAds()
-      .initialize()
-      .then(
-        () => null
-        // console.log("AdMob initialized")
-      );
+    // Startup integrations must never block rendering the navigator. They are
+    // best-effort services, while the app shell remains usable offline.
+    loadSavedLanguage().catch(() => undefined);
+    initNotifications()
+      .then(() => scheduleComeBackReminder())
+      .catch(() => undefined);
+    mobileAds().initialize().catch(() => undefined);
+  }, []);
 
-    if (error) throw error;
-
-    if (fontsLoaded) {
-      setTimeout(() => {
-        setAppReady(true);
-        // SplashScreen.hideAsync();
-      }, 1000);
-    }
+  useEffect(() => {
+    // A font failure must not leave users permanently on the splash screen.
+    if (!fontsLoaded && !error) return;
+    const timer = setTimeout(() => setAppReady(true), 250);
+    return () => clearTimeout(timer);
   }, [fontsLoaded, error]);
+
+  useEffect(() => {
+    // Last-resort boot guard for a stalled native font loader.
+    const timer = setTimeout(() => setAppReady(true), 4000);
+    return () => clearTimeout(timer);
+  }, []);
 
   if (!isAppReady) {
     return <CutomSplashScreen />;

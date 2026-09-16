@@ -2,7 +2,7 @@
   "expo": {
     "name": "9tel",
     "slug": "farm-wizard",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "myapp",
@@ -13,7 +13,8 @@
       "bundleIdentifier": "com.grow.farmwizard",
       "buildNumber": "16",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSMicrophoneUsageDescription": "9tel uses your microphone to make and receive voice calls."
       },
       "googleServicesFile": "./GoogleService-Info.plist"
     },
@@ -23,8 +24,11 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.grow.farmwizard",
-      "versionCode": 23,
-      "googleServicesFile": "./google-services.json"
+      "versionCode": 24,
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "web": {
       "bundler": "metro",

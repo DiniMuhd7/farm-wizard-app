@@ -10,6 +10,7 @@ import { useFonts } from "expo-font";
 import mobileAds from "react-native-google-mobile-ads";
 import LoginProvider from "@/context/LoginProvider";
 import NetworkProvider from "@/context/NetworkProvider";
+import VoiceCallProvider from "@/context/VoiceCallProvider";
 import CutomSplashScreen from "@/components/CutomSplashScreen";
 import NoNetworkModal from "@/components/NoNetworkModal";
 import CheckUpdate from "@/components/CheckUpdate";
@@ -116,24 +117,26 @@ const RootLayout = () => {
   return (
     <LoginProvider>
       <NetworkProvider>
-        <StatusBar style="light" hidden />
-        <Stack
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: "white" },
-            animation: "slide_from_right",
-            header: () => null,
-            navigationBarHidden: true,
-          }}
-        >
-          <Stack.Screen name="index" />
-          <Stack.Screen name="(auth)" />
-          <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="(screens)" />
-        </Stack>
-        <NoNetworkModal />
-        <CheckUpdate />
-        {/* <StatusBar backgroundColor="#161622" style="light" /> */}
+        <VoiceCallProvider>
+          <StatusBar style="light" hidden />
+          <Stack
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: "white" },
+              animation: "slide_from_right",
+              header: () => null,
+              navigationBarHidden: true,
+            }}
+          >
+            <Stack.Screen name="index" />
+            <Stack.Screen name="(auth)" />
+            <Stack.Screen name="(tabs)" />
+            <Stack.Screen name="(screens)" />
+          </Stack>
+          <NoNetworkModal />
+          <CheckUpdate />
+          {/* <StatusBar backgroundColor="#161622" style="light" /> */}
+        </VoiceCallProvider>
       </NetworkProvider>
     </LoginProvider>
   );

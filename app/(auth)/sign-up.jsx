@@ -1,18 +1,15 @@
 import { useState } from "react";
 import { Link, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, Dimensions, Alert, Image, Pressable, TouchableOpacity } from "react-native";
+import { View, Text, Dimensions, Alert } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { icons, images } from "../../constants";
 import { CustomButton, FormField } from "../../components";
 import { signUpUser } from "@/services/auth";
-import BackgroundImage from "../../components/BackgroundImage";
 import SelectField, { CustomSelectField } from "../../components/SelectField";
 import { validateForm } from "../../utils/validateForm";
 import { useCountryData } from "../../hooks/useCountryData";
 import { useLanguageData } from "../../hooks/useLanguageData";
-import { avatarsArr } from "../../hooks/useAvatarArray";
 import { useTranslation } from "react-i18next";
 import { languageMap } from "@/utils/languageMap";
 
@@ -30,7 +27,10 @@ const SignUp = () => {
     cpassword: ""
   });
   const [errors, setErrors] = useState({});
-  const [selectedIndex, setSelectedIndex] = useState(1);
+  // The old avatar-picker UI is gone (it depended on avatar artwork that was
+  // never committed to the repo); the account no longer carries an avatar,
+  // so this is just a fixed placeholder for signUpUser's existing signature.
+  const selectedIndex = 0;
 
   const { countries, loading: countryLoading } = useCountryData();
   const { languages, loading: langLoading } = useLanguageData();
@@ -79,15 +79,6 @@ const SignUp = () => {
 
   };
 
-  const handlePrev = () => {
-    setSelectedIndex((prev) => (prev - 1 + avatarsArr.length) % avatarsArr.length);
-  };
-
-  const handleNext = () => {
-    setSelectedIndex((prev) => (prev + 1) % avatarsArr.length);
-  };
-
-
   const filteredLanguages = languages.filter(lang =>
     Object.keys(languageMap).some(
       key => key.toLowerCase() === lang.label.toLowerCase()
@@ -116,46 +107,8 @@ const SignUp = () => {
     }
   };
   return (
-    <SafeAreaView className="bg-primary h-full flex justify-center items-center">
-      <BackgroundImage source={images.background} />
-      {/* <View className="flex justify-center items-center my-3">
-        <Image
-          source={images.logo}
-          resizeMode="contain"
-          className="w-[100px] h-[100px]"
-        />
-        <Text className="text-lg font-semibold text-white font-psemibold">
-          Sign Up to Farm Wizard
-        </Text>
-      </View> */}
+    <SafeAreaView className="bg-primary h-full flex justify-center items-center" style={{ backgroundColor: "#211B59" }}>
       <Text className="text-white text-3xl font-primary mb-2">CREATE ACCOUNT</Text>
-
-      {/* Avatar Selector */}
-      <View className="flex-row items-center gap-5 mb-6 p-2">
-        <Image source={avatarsArr[(selectedIndex - 1 + avatarsArr.length) % avatarsArr.length]} className="w-14 h-14 opacity-50" />
-        <Pressable
-          onPress={handlePrev}
-        >
-          <Image
-            source={icons.leftChevron}
-            className="w-18 h-14"
-            resizeMode="contain"
-          />
-        </Pressable>
-        <View className="bg-white/20 border-2 border-secondary rounded-3xl p-4 items-center justify-center shadow-lg">
-          <Image source={avatarsArr[selectedIndex]} className="w-28 h-28" resizeMode="contain" />
-        </View>
-        <Pressable
-          onPress={handleNext}
-        >
-          <Image
-            source={icons.rightChevron}
-            className="w-18 h-14"
-            resizeMode="contain"
-          />
-        </Pressable>
-        <Image source={avatarsArr[(selectedIndex + 1) % avatarsArr.length]} className="w-14 h-14 opacity-50" />
-      </View>
 
       <KeyboardAwareScrollView
         enableOnAndroid

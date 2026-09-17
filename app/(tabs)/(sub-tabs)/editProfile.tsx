@@ -1,23 +1,13 @@
 import { useState } from "react";
 import { router } from "expo-router";
-import {
-  View,
-  Text,
-  ScrollView,
-  Dimensions,
-  Alert,
-  Image,
-  Pressable,
-} from "react-native";
+import { View, Text, ScrollView, Dimensions, Alert } from "react-native";
+import { ArrowLeft, Settings } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 
 import { useLoginContext } from "@/context/LoginProvider";
-import BackgroundImage from "@/components/BackgroundImage";
 import { CustomButton, FormField } from "@/components";
 import HeaderNavigation from "@/components/HeaderNavigation";
 import LanguageSwitching from "@/components/LanguageSwitching";
-import { icons, images } from "@/constants";
-import { avatarsArr } from "@/hooks/useAvatarArray";
 import { validateForm } from "../../../utils/validateForm";
 import { updateUser } from "@/services/user";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -36,7 +26,10 @@ const EditProfile = () => {
   }
 
   const [errors, setErrors] = useState<FormErrors>({});
-  const [selectedIndex, setSelectedIndex] = useState(user?.avatar || 0);
+  // The old avatar-picker UI is gone (it depended on avatar artwork that was
+  // never committed to the repo); keep the field so updateUser's existing
+  // signature doesn't need to change.
+  const selectedIndex = user?.avatar || 0;
 
   const [form, setForm] = useState({
     fullName: user.fullName,
@@ -82,25 +75,14 @@ const EditProfile = () => {
     }
   };
 
-  const handlePrev = () => {
-    setSelectedIndex(
-      (prev: number) => (prev - 1 + avatarsArr.length) % avatarsArr.length
-    );
-  };
-
-  const handleNext = () => {
-    setSelectedIndex((prev: number) => (prev + 1) % avatarsArr.length);
-  };
   return (
-    <View className="flex-1 items-center justify-start bg-green-200">
-      <BackgroundImage source={images.background} style={{}} />
-
+    <View className="flex-1 items-center justify-start" style={{ backgroundColor: "#211B59" }}>
       {/* Back Button */}
       <HeaderNavigation
         onLeftPress={() => router.push("/(tabs)/(sub-tabs)/settings")}
         onRightPress={() => null}
-        leftIcon={icons.back}
-        rightIcon={icons.settings}
+        LeftIcon={ArrowLeft}
+        RightIcon={Settings}
         showLeftButton={true}
         showRightButton={false}
       />
@@ -110,44 +92,6 @@ const EditProfile = () => {
         {t("edit_profile")}
       </Text>
       <View className="w-full flex justify-center h-full px-4">
-        {/* <View className="flex flex-row justify-center">
-          <Image
-            source={icons.profile}
-            resizeMode="contain"
-            // className="w-[200px] h-[200px]"
-          />
-        </View> */}
-
-        {/* Avatar Selector */}
-        <View className="flex flex-row justify-center gap-8 mb-6 p-2">
-          <Image
-            source={
-              avatarsArr[
-                (selectedIndex - 1 + avatarsArr.length) % avatarsArr.length
-              ]
-            }
-            className="w-10 h-10 opacity-60"
-          />
-          <Pressable onPress={handlePrev}>
-            <Image
-              source={icons.leftChevron}
-              className="w-18 h-14"
-              resizeMode="contain"
-            />
-          </Pressable>
-          <Image source={avatarsArr[selectedIndex]} className="w-20 h-20" />
-          <Pressable onPress={handleNext}>
-            <Image
-              source={icons.rightChevron}
-              className="w-18 h-14"
-              resizeMode="contain"
-            />
-          </Pressable>
-          <Image
-            source={avatarsArr[(selectedIndex + 1) % avatarsArr.length]}
-            className="w-12 h-12 opacity-60"
-          />
-        </View>
         <Text className="text-white text-xl font-primary text-center font-bold">
           {user.fullName}
         </Text>

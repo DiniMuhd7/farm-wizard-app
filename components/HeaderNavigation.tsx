@@ -1,11 +1,12 @@
 import React from "react";
-import { View, TouchableOpacity, Image } from "react-native";
+import { View, TouchableOpacity } from "react-native";
 
 interface HeaderNavigationProps {
   onLeftPress?: () => void;
   onRightPress?: () => void;
-  leftIcon?: any;
-  rightIcon?: any;
+  // Pass lucide-react-native icon components, e.g. LeftIcon={ArrowLeft}.
+  LeftIcon?: React.ComponentType<{ size?: number; color?: string }>;
+  RightIcon?: React.ComponentType<{ size?: number; color?: string }>;
   showLeftButton?: boolean;
   showRightButton?: boolean;
 }
@@ -13,8 +14,8 @@ interface HeaderNavigationProps {
 const HeaderNavigation: React.FC<HeaderNavigationProps> = ({
   onLeftPress,
   onRightPress,
-  leftIcon,
-  rightIcon,
+  LeftIcon,
+  RightIcon,
   showLeftButton = true,
   showRightButton = true,
 }) => {
@@ -25,20 +26,8 @@ const HeaderNavigation: React.FC<HeaderNavigationProps> = ({
           className="w-10 h-10 rounded-full items-center justify-center"
           onPress={onLeftPress}
         >
-          <Image source={leftIcon} className="w-20 h-20 rounded-full" />
+          {LeftIcon ? <LeftIcon size={22} color="#fff" /> : null}
         </TouchableOpacity>
-        // <View className="flex-row">
-        //             <TouchableOpacity className="">
-        //               <Image
-        //                 source={useAvatarArray(user.avatar || 0)}
-        //                 className="w-16 h-16 rounded-full"
-        //               />
-        //             </TouchableOpacity>
-        //             <View className="flex my-4">
-        //               <Text className="text-white text-base">Hi, {user.fullName}</Text>
-        //               <Text className="text-white text-base">{user.score}</Text>
-        //             </View>
-        //           </View>
       )}
 
       {showRightButton && (
@@ -46,7 +35,7 @@ const HeaderNavigation: React.FC<HeaderNavigationProps> = ({
           className="w-10 h-10 rounded-full items-center justify-center"
           onPress={onRightPress}
         >
-          <Image source={rightIcon} className="w-20 h-20" />
+          {RightIcon ? <RightIcon size={22} color="#fff" /> : null}
         </TouchableOpacity>
       )}
     </View>

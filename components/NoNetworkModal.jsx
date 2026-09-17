@@ -7,11 +7,10 @@ import {
     ActivityIndicator,
     TouchableOpacity,
     TouchableWithoutFeedback,
-    Image,
 } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
+import { WifiOff } from 'lucide-react-native';
 import { useNetwork } from '../context/NetworkProvider';
-import { images } from '@/constants';
 import CustomButton from './CustomButton';
 import { BlurView } from 'expo-blur';
 
@@ -68,7 +67,7 @@ const NoNetworkModal = () => {
                 >
                     <TouchableWithoutFeedback onPress={() => { }}>
                         <View className="flex-1 w-full bg-[#857f6e85] opacity-2 rounded-lg p-2 justify-center items-center">
-                            <Image source={images.noNetwork} className="w-60 h-60" />
+                            <WifiOff color="#fff" size={72} />
                             <Text
                                 className="text-center text-xl px-2 font-secondary my-10"
                                 style={{
@@ -77,7 +76,7 @@ const NoNetworkModal = () => {
                                     paddingHorizontal: 10,
                                 }}
                             >
-                                Oops! Your crystal link is down — you're offline. Without a connection to the WizardNet, some magic might misfire. Try reconnecting your mortal internet!
+                                You're offline. 9tel needs a connection to place and receive calls.
                             </Text>
                             <Text className='text-white'>
                                 Please check your connection. Retrying automatically...

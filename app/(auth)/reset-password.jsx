@@ -1,11 +1,9 @@
 import { useState } from "react";
 import { Link, router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, ScrollView, Dimensions, Alert, Image } from "react-native";
+import { View, Text, ScrollView, Dimensions, Alert } from "react-native";
 
-import { images } from "../../constants";
 import { CustomButton, FormField } from "../../components";
-import BackgroundImage from "../../components/BackgroundImage";
 import { resetPassword } from "../../services/auth";
 import { useTranslation } from "react-i18next";
 import { validateForm } from "../../utils/validateForm";
@@ -55,8 +53,7 @@ const ResetPassword = () => {
 
     const { t } = useTranslation();
     return (
-        <SafeAreaView className="bg-primary h-full">
-            <BackgroundImage source={images.background} />
+        <SafeAreaView className="bg-primary h-full" style={{ backgroundColor: "#211B59" }}>
             <ScrollView>
                 <View
                     className="w-full flex justify-center h-full px-4 my-6"
@@ -64,13 +61,9 @@ const ResetPassword = () => {
                         minHeight: Dimensions.get("window").height - 100,
                     }}
                 >
-                    <View className="flex flex-row justify-center">
-                        <Image
-                            source={images.logo}
-                            resizeMode="contain"
-                            className="w-[200px] h-[200px]"
-                        />
-                    </View>
+                    <Text className="text-white text-3xl font-primary text-center mb-2">
+                        9tel
+                    </Text>
 
                     <Text className="text-[18px] text-center font-semibold text-white mt-10 font-secondary">
                         Enter new password to reset your account password

@@ -1,11 +1,8 @@
-import { View, Text, StyleSheet, Animated, Image } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { View, Text, StyleSheet, Animated } from "react-native";
+import { Phone } from "lucide-react-native";
 import { useEffect, useRef } from "react";
-import { images } from "@/constants";
 
 export default function CutomSplashScreen() {
-    const router = useRouter();
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(0.5)).current;
 
@@ -23,33 +20,11 @@ export default function CutomSplashScreen() {
                 useNativeDriver: true,
             }),
         ]).start();
-
-        // const timer = setTimeout(() => {
-        //     router.replace("/auth");
-        // }, 2000);
-
-        // return () => clearTimeout(timer);
     }, []);
 
     return (
         <View style={styles.container}>
-            {/* <Image
-                source={images.background}
-                className="w-full h-full"
-                resizeMode="cover" 
-            /> */}
-            <Image
-                source={images.background1}
-                className="absolute w-full h-full"
-                resizeMode="cover"
-                blurRadius={0.5}
-            />
-            <Image
-                source={images.logoLg}
-                resizeMode="contain"
-                className="w-[250px] h-[250px]"
-            />
-            {/* <Animated.View
+            <Animated.View
                 style={[
                     styles.iconContainer,
                     {
@@ -57,11 +32,12 @@ export default function CutomSplashScreen() {
                         transform: [{ scale: scaleAnim }],
                     },
                 ]}
-            > */}
-
-            {/* <Ionicons name="medical" size={100} color="white" />
-                <Text style={styles.appName}>MedRemind</Text> */}
-            {/* </Animated.View> */}
+            >
+                <View style={styles.badge}>
+                    <Phone size={56} color="#fff" />
+                </View>
+                <Text style={styles.appName}>9tel</Text>
+            </Animated.View>
         </View>
     );
 }
@@ -69,19 +45,26 @@ export default function CutomSplashScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "#fff",
-        // backgroundColor: "#4CAF50",
+        backgroundColor: "#211B59",
         alignItems: "center",
         justifyContent: "center",
     },
     iconContainer: {
         alignItems: "center",
     },
+    badge: {
+        height: 96,
+        width: 96,
+        borderRadius: 32,
+        backgroundColor: "#5147AF",
+        alignItems: "center",
+        justifyContent: "center",
+    },
     appName: {
         color: "white",
         fontSize: 32,
-        fontWeight: "bold",
+        fontFamily: "Poppins-Bold",
         marginTop: 20,
-        letterSpacing: 1,
+        letterSpacing: -1,
     },
 });

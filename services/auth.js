@@ -149,12 +149,13 @@ export const verifyOTP = async (email, code) => {
   }
 };
 
-export const resetPassword = async (email, password) => {
+export const resetPassword = async (email, code, password) => {
   try {
     const response = await client.post(
       "/auth/reset-password",
       {
         email,
+        code,
         newPassword: password,
       },
       {

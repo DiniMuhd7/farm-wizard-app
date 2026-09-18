@@ -20,13 +20,19 @@ import i18n from "@/utils/i18n";
 import { languageMap } from "@/utils/languageMap";
 import {
   initNotifications,
-  scheduleComeBackReminder,
 } from "@/utils/notifications";
 import { useKeepAwake } from "expo-keep-awake";
 // import analytics from "@react-native-firebase/analytics";
 
-// Keep the native splash until we're ready
-// SplashScreen.preventAutoHideAsync();
+// Keep the native splash (assets/splash.png) on screen until the JS splash
+// (CutomSplashScreen, rendered below while !isAppReady) has actually
+// committed its first frame. Without this, Expo's default behavior hides
+// the native splash the moment the JS bundle starts executing — before
+// React has painted anything — which can show one frame of blank/white
+// screen between the native splash disappearing and the JS splash
+// appearing. Both splash surfaces now share the same #211B59 background
+// (see app.json), so any timing slop between them is invisible either way.
+SplashScreen.preventAutoHideAsync().catch(() => undefined);
 const LANGUAGE_KEY = "user-language";
 
 const RootLayout = () => {
@@ -49,6 +55,14 @@ const RootLayout = () => {
     "Poppins-Thin": require("../assets/fonts/Poppins-Thin.ttf"),
   });
   const [isAppReady, setAppReady] = useState(false);
+
+  useEffect(() => {
+    // Runs after this component's first commit — i.e. once CutomSplashScreen
+    // has actually painted — so the native splash only ever hides behind
+    // something already showing the same #211B59 background, never behind
+    // a not-yet-rendered blank frame.
+    SplashScreen.hideAsync().catch(() => undefined);
+  }, []);
 
   const loadSavedLanguage = async () => {
     const savedLangCode = await AsyncStorage.getItem(LANGUAGE_KEY);
@@ -91,9 +105,7 @@ const RootLayout = () => {
     // Startup integrations must never block rendering the navigator. They are
     // best-effort services, while the app shell remains usable offline.
     loadSavedLanguage().catch(() => undefined);
-    initNotifications()
-      .then(() => scheduleComeBackReminder())
-      .catch(() => undefined);
+    initNotifications().catch(() => undefined);
     mobileAds().initialize().catch(() => undefined);
   }, []);
 

@@ -79,7 +79,123 @@ exports.outgoingCallTwiML = (req, res) => {
   const callerId = process.env.TWILIO_CALLER_ID;
   if (!callerId || !E164.test(callerId)) return res.status(503).type("text/plain").send("Voice caller ID is not configured");
   const noun = destination.startsWith("client:") ? `<Client>${escapedXml(destination.slice(7))}</Client>` : `<Number>${escapedXml(destination)}</Number>`;
-  return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerId}">${noun}</Dial></Response>`);
+  const action = escapedXml(`${process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/v1/voice/outgoing/status`);
+  return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerId}" action="${action}" method="POST">${noun}</Dial></Response>`);
+};
+
+// Twilio hits this whenever someone dials a 9tel number on the PSTN. `To` is
+// the number they dialed (one of the numbers provisioned via
+// POST /api/v1/numbers/provision); `From` is the caller. We look up which
+// user owns that number and ring their app via the same Client identity the
+// mobile app registers with (see controllers/voice issueToken, and
+// services/voice.ts's Voice.Event.CallInvite listener on the client side).
+//
+// If the callee's app isn't registered and connected (closed/killed, or push
+// isn't configured), Dial's `timeout` elapses with no answer and control
+// passes to the `action` URL below with the dial's outcome — NOT to a fixed
+// fallback TwiML block after </Dial>, which would also fire (and confusingly
+// play an "unavailable" message) after every ordinary *successful* call too,
+// since <Dial> falls through to whatever follows it once the call ends for
+// any reason, answered or not.
+exports.incomingCallTwiML = async (req, res) => {
+  if (!twilioRequestIsValid(req)) return res.status(403).type("text/plain").send("Invalid Twilio signature");
+  const dialedNumber = String(req.body?.To || "").trim();
+  if (!E164.test(dialedNumber)) {
+    return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>This number is not in service.</Say></Response>`);
+  }
+
+  const User = require("../../models/User");
+  const owner = await User.findOne({ phoneNumber: dialedNumber }).select("_id").lean();
+  if (!owner) {
+    // A number Twilio still routes to us but no user currently holds —
+    // e.g. released after account deletion but not yet deprovisioned on
+    // Twilio's side. Fail safe rather than dial an empty/wrong identity.
+    return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>This number is not currently assigned. Goodbye.</Say></Response>`);
+  }
+
+  const identity = escapedXml(`user-${owner._id.toString()}`);
+  const action = escapedXml(
+    `${process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/v1/voice/incoming/status?userId=${owner._id.toString()}`
+  );
+  return res.type("text/xml").send(
+    `<?xml version="1.0" encoding="UTF-8"?><Response><Dial timeout="25" answerOnBridge="true" action="${action}" method="POST"><Client>${identity}</Client></Dial></Response>`
+  );
+};
+
+// Shared by both status callbacks below: only actually-failed-to-connect
+// outcomes get a spoken message. A normal call that connected and was later
+// hung up by either side also reaches an `action` URL (that's how <Dial>
+// works), and must NOT play "unavailable" on the way out.
+function respondToDialOutcome(res, dialCallStatus) {
+  if (dialCallStatus === "completed") {
+    return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response></Response>`);
+  }
+  return res
+    .type("text/xml")
+    .send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>The person you are calling is unavailable. Please try again later.</Say></Response>`);
+}
+
+function normalizedDialStatus(rawStatus) {
+  const allowed = ["completed", "no-answer", "busy", "failed", "canceled"];
+  return allowed.includes(rawStatus) ? rawStatus : "failed";
+}
+
+async function logCall({ userId, direction, counterparty, dialCallStatus, dialCallDuration, callSid }) {
+  try {
+    const Call = require("../../models/Call");
+    await Call.create({
+      user: userId,
+      direction,
+      counterparty,
+      status: normalizedDialStatus(dialCallStatus),
+      durationSeconds: Number(dialCallDuration) || 0,
+      callSid,
+    });
+  } catch (error) {
+    // Never let CDR logging break the live call flow — the person on the
+    // call has already heard the outcome via TwiML by the time this runs.
+    console.error("Unable to log call record:", error.message);
+  }
+}
+
+// Called once the outbound Dial leg from /outgoing ends, however it ended.
+// `From` on THIS request is the same client identity that placed the call
+// (Twilio resends the original request's parameters here), e.g.
+// "client:user-<id>" — that's how we know which user to attribute it to.
+exports.outgoingDialStatus = async (req, res) => {
+  if (!twilioRequestIsValid(req)) return res.status(403).type("text/plain").send("Invalid Twilio signature");
+  const from = String(req.body?.From || "");
+  const match = from.match(/^client:user-([A-Za-z0-9]+)$/);
+  if (match) {
+    await logCall({
+      userId: match[1],
+      direction: "outbound",
+      counterparty: String(req.body?.To || "unknown"),
+      dialCallStatus: req.body?.DialCallStatus,
+      dialCallDuration: req.body?.DialCallDuration,
+      callSid: req.body?.DialCallSid,
+    });
+  }
+  return respondToDialOutcome(res, req.body?.DialCallStatus);
+};
+
+// Called once the inbound Dial leg from /incoming ends. The owning user's id
+// travels through as a query param on the `action` URL rather than a second
+// DB lookup by number — see incomingCallTwiML above.
+exports.incomingDialStatus = async (req, res) => {
+  if (!twilioRequestIsValid(req)) return res.status(403).type("text/plain").send("Invalid Twilio signature");
+  const userId = String(req.query?.userId || "");
+  if (userId) {
+    await logCall({
+      userId,
+      direction: "inbound",
+      counterparty: String(req.body?.From || "unknown"),
+      dialCallStatus: req.body?.DialCallStatus,
+      dialCallDuration: req.body?.DialCallDuration,
+      callSid: req.body?.DialCallSid,
+    });
+  }
+  return respondToDialOutcome(res, req.body?.DialCallStatus);
 };
 
 exports._private = { createVoiceAccessToken, isAllowedDestination };

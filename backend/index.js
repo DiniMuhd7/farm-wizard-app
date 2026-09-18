@@ -9,18 +9,10 @@ const db = require("./src/config/connection");
 
 const auth = require("./src/routes/auth");
 const user = require("./src/routes/user");
-const userLevels = require("./src/routes/userPlantLevel");
-const payment = require("./src/routes/payment");
-const earning = require("./src/routes/earning");
-const withdrawal = require("./src/routes/withdrawal");
-const notification = require("./src/routes/notification");
-const leaderboard = require("./src/routes/leaderboard");
-const gameState = require("./src/routes/gameState");
 const externalAPIs = require("./src/routes/external-apis");
-const cosmetics = require("./src/routes/cosmetics");
-const referral = require("./src/routes/referral");
-const shorts = require("./src/routes/shorts");
 const voice = require("./src/routes/voice");
+const numbers = require("./src/routes/numbers");
+const calls = require("./src/routes/calls");
 
 const app = express();
 
@@ -47,18 +39,10 @@ app.get("/health", (req, res) => {
 // Routes
 app.use("/api/v1/auth", auth);
 app.use("/api/v1/user", user);
-app.use("/api/v1/user-level", userLevels);
-app.use("/api/v1/payment", payment);
-app.use("/api/v1/earning", earning);
-app.use("/api/v1/withdrawal", withdrawal);
-app.use("/api/v1/notification", notification);
-app.use("/api/v1/leaderboard", leaderboard);
-app.use("/api/v1/game-state", gameState);
 app.use("/api/v1/external-apis", externalAPIs);
-app.use("/api/v1/cosmetics", cosmetics);
-app.use("/api/v1/referral", referral);
-app.use("/api/v1/shorts", shorts);
 app.use("/api/v1/voice", voice);
+app.use("/api/v1/numbers", numbers);
+app.use("/api/v1/calls", calls);
 
 // Start Server
 const PORT = process.env.PORT || 5000;

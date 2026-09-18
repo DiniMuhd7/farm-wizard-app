@@ -32,7 +32,7 @@ const ResetPassword = () => {
         if (isValid) {
             setSubmitting(true);
             try {
-                const result = await resetPassword(email, form.password);
+                const result = await resetPassword(email, code, form.password);
 
                 if (result.status !== 200) {
                     Alert.alert("Error result", result.message)

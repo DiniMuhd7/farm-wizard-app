@@ -2,15 +2,11 @@ const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const User = require("../../models/User");
 const { goodResponse, badResponse } = require("../../utils/response");
-const increaseInventory = require("../../utils/increaseInventory");
-const sendNotification = require("../../utils/sendNotification");
 
 const getUserInfo = (user) => ({
   fullName: user.fullName,
   email: user.email,
   userType: user.userType,
-  score: user.score,
-  usdBalance: user.usdBalance,
   country: user.country,
   language: user.language,
   isPremium: user.isPremium,
@@ -69,21 +65,22 @@ const issueGuestSession = async (req, res) => {
 };
 
 const registerUser = async (req, res) => {
-  const { fullName, email, password, country, language, avatar } = req.body;
+  const fullName = String(req.body?.fullName || "").trim();
+  const email = String(req.body?.email || "").trim();
+  const password = String(req.body?.password || "");
+  const { country, language, avatar } = req.body || {};
 
-  if (!password || email.trim() === "" || fullName.trim() === "") {
-    return res.status(400).json({ message: "All fields are rquired" });
+  if (!fullName || !email || !password) {
+    return badResponse(res, "All fields are required", {}, 400);
   }
 
   const userExists = await User.findOne({ email });
-  //  const userExists = await User.isThisEmailInUse(email);
   if (userExists) {
-    return badResponse(
-      res,
-      "User already exists",
-      { email, password, fullName },
-      200
-    );
+    // Never echo the submitted password back, even on a routine
+    // "already registered" response — it's still the same HTTP response
+    // body a proxy, log aggregator, or error tracker downstream of this
+    // API could capture in plaintext.
+    return badResponse(res, "User already exists", { email, fullName }, 200);
   }
 
   try {
@@ -96,25 +93,18 @@ const registerUser = async (req, res) => {
       avatar,
     });
 
-    if (user) {
-      const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-        expiresIn: "1d",
-      });
-      return goodResponse(
-        res,
-        "User created successfully, Login to continue",
-        { user, token },
-        200
-      );
-    } else {
-      console.log("Something went wrong while creating user");
-      return badResponse(
-        res,
-        "Invalid user data",
-        { error: error.message },
-        200
-      );
-    }
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "1d",
+    });
+    // getUserInfo(), not the raw Mongoose document — the raw document
+    // includes the bcrypt password hash and the tokens array, neither of
+    // which this response should ever carry.
+    return goodResponse(
+      res,
+      "User created successfully, Login to continue",
+      { user: getUserInfo(user), token },
+      200
+    );
   } catch (error) {
     console.log("error", error);
     return badResponse(res, "Error occured", { error: error.message }, 500);
@@ -143,23 +133,12 @@ const loginUser = async (req, res) => {
         }
       });
     }
-    // 💡 Add daily login points logic
+
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Set to start of the day
-
-    let lastLoginDate = user.lastLoginDate
-      ? new Date(user.lastLoginDate)
-      : null;
-
-    if (!lastLoginDate || lastLoginDate < today) {
-      // pointsToAdd = 10;
-      //user.points = (user.points || 0) + pointsToAdd;
-      lastLoginDate = new Date(); // update login date
-      await increaseInventory(user._id, "Pesticide", 20);
-      await increaseInventory(user._id, "Fertilizer", 20);
-      await increaseInventory(user._id, "Water", 20);
-      await sendNotification(user._id, "Daily Login Gift");
-    }
+    today.setHours(0, 0, 0, 0);
+    const lastLoginDate = user.lastLoginDate && new Date(user.lastLoginDate) >= today
+      ? user.lastLoginDate
+      : new Date();
 
     await User.findByIdAndUpdate(user._id, {
       tokens: [...oldTokens, { token, signedAt: Date.now().toString() }],

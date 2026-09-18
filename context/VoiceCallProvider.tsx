@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { router } from "expo-router";
 import { useLoginContext } from "@/context/LoginProvider";
 import IncomingCallOverlay from "@/components/IncomingCallOverlay";
+import { registerPushToken } from "@/utils/notifications";
 import {
   registerForIncomingCalls,
   setIncomingCallHandler,
@@ -31,9 +32,14 @@ export default function VoiceCallProvider({ children }: { children: React.ReactN
     registerForIncomingCalls().catch((error) => {
       // Not fatal: the dialer still works for outgoing calls, and
       // startVoiceCall() surfaces its own errors if the native module is
-      // genuinely missing. This only means this device won't ring.
+      // genuinely missing. This only means this device won't ring while
+      // the app is open.
       console.log("Incoming-call registration deferred:", error?.message);
     });
+    // Captures the device's push token server-side. This does not yet make
+    // calls ring while the app is closed — see registerPushToken's own
+    // comment for what's still missing on the Twilio/Apple/Google side.
+    registerPushToken().catch(() => undefined);
   }, [isLogged]);
 
   const handleAccept = async () => {

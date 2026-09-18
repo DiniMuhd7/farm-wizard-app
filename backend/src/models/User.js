@@ -21,8 +21,6 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    score: { type: Number, default: 0 },
-    usdBalance: { type: Number, default: 0 },
     profilePicture: String,
     avatar: Number,
     tokens: [{ type: Object }],
@@ -34,6 +32,9 @@ const userSchema = new mongoose.Schema(
     },
     country: String,
     language: String,
+    // The user's assigned 9tel number (E.164). Populated by
+    // POST /api/v1/numbers/provision. Unset until they claim one.
+    phoneNumber: { type: String, unique: true, sparse: true },
     isPremium: { type: Boolean, default: false },
     premiumUntil: Date,
     status: { type: String, enum: ["active", "inactive"], default: "active" },
@@ -43,21 +44,6 @@ const userSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
-    // Cosmetics (bought with WizPoints/score)
-    ownedCosmetics: { type: [String], default: [] },
-    equippedFrame: { type: String, default: null },
-    equippedSkin: { type: String, default: null },
-    // Referrals
-    referralCode: { type: String, unique: true, sparse: true },
-    referredBy: { type: String, default: null }, // referral code used at signup
-    referralCount: { type: Number, default: 0 },
-    // Anti-grind: how much WizPoints earned today (UTC)
-    dailyEarned: {
-      date: { type: String, default: null }, // YYYY-MM-DD
-      amount: { type: Number, default: 0 },
-    },
-    // Idle/offline earning: last time the player collected idle WizPoints
-    lastIdleCollected: { type: Date, default: null },
   },
 
   { timestamps: true }

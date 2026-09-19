@@ -4,8 +4,10 @@ import { ChevronLeft, ChevronRight, Globe2, Moon, Phone, ShieldCheck, Smartphone
 import { router } from "expo-router";
 import { useEffect, useState } from "react";
 import { getMyNumber, provisionNumber } from "@/services/numbers";
+import { useLoginContext } from "@/context/LoginProvider";
 
 export default function Settings() {
+  const { user } = useLoginContext();
   const [wifi, setWifi] = useState(true);
   const [alerts, setAlerts] = useState(true);
 
@@ -20,7 +22,7 @@ export default function Settings() {
       .finally(() => setLoadingNumber(false));
   }, []);
 
-  const handleGetNumber = async () => {
+  const doProvision = async () => {
     setProvisioning(true);
     try {
       const number = await provisionNumber("US");
@@ -30,6 +32,28 @@ export default function Settings() {
     } finally {
       setProvisioning(false);
     }
+  };
+
+  // Guests get the app instantly with no login screen (see
+  // context/LoginProvider.js) — but a real, permanent number is exactly the
+  // kind of thing a throwaway guest account shouldn't hold: uninstall the
+  // app, clear storage, or lose the device, and a guest session is gone for
+  // good along with whatever number was tied to it. This is the one place
+  // sign-in is actually required, and only reached if someone tries to do
+  // this specific thing.
+  const handleGetNumber = () => {
+    if (user?.isGuest) {
+      Alert.alert(
+        "Create a free account",
+        "Getting a 9tel number ties it to your account, so create a free account first to make sure you don't lose access to it.",
+        [
+          { text: "Not now", style: "cancel" },
+          { text: "Create account", onPress: () => router.push("/sign-up") },
+        ]
+      );
+      return;
+    }
+    doProvision();
   };
 
   return (

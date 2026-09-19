@@ -18,6 +18,15 @@ const app = express();
 
 // Middleware
 app.use(express.json());
+// Twilio's own webhook requests — the Voice URL fetch for /outgoing and
+// /incoming, and both <Dial action> status callbacks — are always sent as
+// application/x-www-form-urlencoded, never JSON. Without a parser for that
+// content type, req.body was an empty object for every one of those
+// requests: twilioRequestIsValid() could never compute a matching
+// signature (it signs off req.body's params), so every Twilio webhook to
+// this server was being rejected with a 403 before ever reading `To` or
+// reaching the <Dial> verb.
+app.use(express.urlencoded({ extended: false }));
 app.use(cors());
 app.use(bodyParser.json());
 

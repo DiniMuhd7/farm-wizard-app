@@ -1,13 +1,16 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import Constants from "expo-constants";
+import uuid from "react-native-uuid";
 import client from "@/config/client";
-import { signOut } from "@/services/auth";
+import { signOut, signInAsGuest } from "@/services/auth";
 
 const LoginContext = createContext();
 
 export const useLoginContext = () => useContext(LoginContext);
 
 const CACHED_USER_KEY = "cachedUser";
+const GUEST_DEVICE_ID_KEY = "guest-device-id";
 
 const LoginProvider = ({ children }) => {
   const [isLogged, setIsLogged] = useState(false);
@@ -24,11 +27,48 @@ const LoginProvider = ({ children }) => {
     }
   }, [user]);
 
+  // Starts an anonymous session automatically so nobody has to tap through
+  // a login screen to use the dialer. The same device id is reused across
+  // launches (see sign-in.jsx's manual guest button, which shares it), so
+  // this always resolves to the same guest account rather than creating a
+  // new throwaway one every cold start.
+  const startGuestSession = async () => {
+    let deviceId = await AsyncStorage.getItem(GUEST_DEVICE_ID_KEY);
+    if (!deviceId) {
+      deviceId = String(uuid.v4());
+      await AsyncStorage.setItem(GUEST_DEVICE_ID_KEY, deviceId);
+    }
+    const deviceName = (Constants.deviceName || "9tel").slice(0, 24);
+    const result = await signInAsGuest(deviceId, deviceName);
+    if (result?.data?.success && result.data?.data?.user) {
+      setUser(result.data.data.user);
+      setIsLogged(true);
+      return true;
+    }
+    return false;
+  };
+
   const fetchUser = async () => {
     setLoading(true);
     const token = await AsyncStorage.getItem("token");
 
     if (token === null) {
+      // No session yet — fresh install, or after a manual sign-out. Rather
+      // than stopping at a login screen, sign in as a guest automatically;
+      // a real account is only needed later, for things a guest shouldn't
+      // do unsupervised (e.g. provisioning a number — see settings.tsx).
+      try {
+        const started = await startGuestSession();
+        if (started) {
+          setLoading(false);
+          return;
+        }
+      } catch (error) {
+        // No network, backend unreachable, etc. — fall through to the
+        // signed-out state below so the app still has something to show
+        // rather than hanging on a blank screen.
+        console.log("Automatic guest sign-in deferred:", error?.message);
+      }
       setUser({});
       setIsLogged(false);
       setLoading(false);

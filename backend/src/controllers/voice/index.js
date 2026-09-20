@@ -72,14 +72,42 @@ exports.issueToken = (req, res) => {
   }
 };
 
-exports.outgoingCallTwiML = (req, res) => {
+exports.outgoingCallTwiML = async (req, res) => {
   if (!twilioRequestIsValid(req)) return res.status(403).type("text/plain").send("Invalid Twilio signature");
   const destination = String(req.body?.To || "").trim();
-  if (!isAllowedDestination(destination)) return res.status(400).type("text/xml").send("<Response><Say>That destination is not permitted.</Say></Response>");
   const callerId = process.env.TWILIO_CALLER_ID;
   if (!callerId || !E164.test(callerId)) return res.status(503).type("text/plain").send("Voice caller ID is not configured");
+  const baseUrl = `${process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/v1/voice/outgoing/status`;
+  const action = escapedXml(baseUrl);
+
+  // If the dialed number happens to belong to another 9tel user, try
+  // reaching their app directly first — free, instant, no PSTN leg — and
+  // only fall back to actually dialing the number over the phone network if
+  // they're not reachable that way (app closed, not registered, or just
+  // doesn't pick up in time). A plain phone number with no 9tel account
+  // behind it skips straight to the normal dial-the-number path below, same
+  // as before. This lookup is intentionally allowed regardless of
+  // TWILIO_ALLOWED_DESTINATION_PREFIXES — it's a known, already-provisioned
+  // number belonging to this system, not an arbitrary external destination.
+  if (E164.test(destination)) {
+    const User = require("../../models/User");
+    const owner = await User.findOne({ phoneNumber: destination }).select("_id").lean();
+    if (owner) {
+      const identity = escapedXml(`user-${owner._id.toString()}`);
+      // Short timeout: this is the "try the app" attempt, not the real
+      // call — if it's going to connect at all, it'll ring and answer well
+      // within this, and a genuinely offline/unregistered client fails
+      // near-instantly anyway. Keeping this short bounds how long the
+      // caller waits before the PSTN fallback kicks in.
+      const fallbackAction = escapedXml(`${baseUrl}?fallbackTo=${encodeURIComponent(destination)}`);
+      return res.type("text/xml").send(
+        `<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerId}" timeout="12" action="${fallbackAction}" method="POST"><Client>${identity}</Client></Dial></Response>`
+      );
+    }
+  }
+
+  if (!isAllowedDestination(destination)) return res.status(400).type("text/xml").send("<Response><Say>That destination is not permitted.</Say></Response>");
   const noun = destination.startsWith("client:") ? `<Client>${escapedXml(destination.slice(7))}</Client>` : `<Number>${escapedXml(destination)}</Number>`;
-  const action = escapedXml(`${process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/v1/voice/outgoing/status`);
   return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerId}" action="${action}" method="POST">${noun}</Dial></Response>`);
 };
 
@@ -162,8 +190,31 @@ async function logCall({ userId, direction, counterparty, dialCallStatus, dialCa
 // `From` on THIS request is the same client identity that placed the call
 // (Twilio resends the original request's parameters here), e.g.
 // "client:user-<id>" — that's how we know which user to attribute it to.
+//
+// A `fallbackTo` query param means this was the app-to-app attempt (see
+// outgoingCallTwiML) and it didn't connect — fall back to a real PSTN call
+// to the same number, exactly like an ordinary outbound call. That second
+// leg's own action callback (no fallbackTo param on it) is what actually
+// logs the call and speaks the final outcome — a call that had to fall
+// back still ends up as exactly one entry in the caller's history, not two.
 exports.outgoingDialStatus = async (req, res) => {
   if (!twilioRequestIsValid(req)) return res.status(403).type("text/plain").send("Invalid Twilio signature");
+  const dialCallStatus = req.body?.DialCallStatus;
+  const fallbackTo = req.query?.fallbackTo ? String(req.query.fallbackTo) : null;
+
+  if (fallbackTo && dialCallStatus !== "completed") {
+    // No isAllowedDestination check here on purpose: fallbackTo only ever
+    // gets set in outgoingCallTwiML after confirming it's an existing 9tel
+    // user's own provisioned number, not arbitrary caller-supplied input —
+    // the prefix allow-list exists to gate arbitrary external PSTN spend,
+    // which doesn't apply to a number this system already owns.
+    const callerId = process.env.TWILIO_CALLER_ID;
+    const action = escapedXml(`${process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/v1/voice/outgoing/status`);
+    return res.type("text/xml").send(
+      `<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerId}" action="${action}" method="POST"><Number>${escapedXml(fallbackTo)}</Number></Dial></Response>`
+    );
+  }
+
   const from = String(req.body?.From || "");
   const match = from.match(/^client:user-([A-Za-z0-9]+)$/);
   if (match) {
@@ -171,12 +222,12 @@ exports.outgoingDialStatus = async (req, res) => {
       userId: match[1],
       direction: "outbound",
       counterparty: String(req.body?.To || "unknown"),
-      dialCallStatus: req.body?.DialCallStatus,
+      dialCallStatus,
       dialCallDuration: req.body?.DialCallDuration,
       callSid: req.body?.DialCallSid,
     });
   }
-  return respondToDialOutcome(res, req.body?.DialCallStatus);
+  return respondToDialOutcome(res, dialCallStatus);
 };
 
 // Called once the inbound Dial leg from /incoming ends. The owning user's id

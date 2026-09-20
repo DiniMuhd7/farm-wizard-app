@@ -3,6 +3,7 @@ import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from "react-nat
 import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowDownLeft, ArrowUpRight, Clock3, PhoneCall } from "lucide-react-native";
 import { getCallStats, type CallStats } from "@/services/calls";
+import KeypadFab from "@/components/KeypadFab";
 
 const DAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
 
@@ -30,6 +31,7 @@ export default function Stats() {
         <View style={s.loading}>
           <ActivityIndicator color="#5F56C6" />
         </View>
+        <KeypadFab />
       </SafeAreaView>
     );
   }
@@ -40,6 +42,7 @@ export default function Stats() {
         <View style={s.loading}>
           <Text style={s.emptyText}>{error}</Text>
         </View>
+        <KeypadFab />
       </SafeAreaView>
     );
   }
@@ -103,6 +106,7 @@ export default function Stats() {
           </View>
         )}
       </ScrollView>
+      <KeypadFab />
     </SafeAreaView>
   );
 }

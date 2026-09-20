@@ -202,13 +202,25 @@ export function subscribeToCallStatus(
   call: VoiceCall,
   onStatusChange: (status: CallStatus) => void
 ): () => void {
+  // activeCall was previously only ever cleared by endActiveVoiceCall() —
+  // the explicit "I tapped hang up" path. If the call instead ended on its
+  // own (the far end hung up, or the far end never answered and Twilio's
+  // <Dial> action returned the "unavailable" TwiML), activeCall stayed set
+  // to this now-dead Call object. The next call attempt's call.tsx effect
+  // would then see getActiveVoiceCall() return non-null, assume that dead
+  // object was a real active call, attach to it instead of dialing fresh —
+  // and since a dead Call object emits no further events, the screen was
+  // stuck on "Connecting…" until the user manually ended and redialed.
+  const clearIfCurrent = () => {
+    if (activeCall === call) activeCall = null;
+  };
   const bindings: Array<[string, (...args: any[]) => void]> = [
     [callEventNames.Ringing, () => onStatusChange("ringing")],
     [callEventNames.Connected, () => onStatusChange("connected")],
     [callEventNames.Reconnecting, () => onStatusChange("reconnecting")],
     [callEventNames.Reconnected, () => onStatusChange("connected")],
-    [callEventNames.Disconnected, () => onStatusChange("disconnected")],
-    [callEventNames.ConnectFailure, () => onStatusChange("failed")],
+    [callEventNames.Disconnected, () => { clearIfCurrent(); onStatusChange("disconnected"); }],
+    [callEventNames.ConnectFailure, () => { clearIfCurrent(); onStatusChange("failed"); }],
   ];
   bindings.forEach(([eventName, handler]) => call.on(eventName, handler));
   return () => bindings.forEach(([eventName, handler]) => call.off?.(eventName, handler));

@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ArrowDownLeft, ArrowUpRight, Phone, PhoneMissed, Search } from "lucide-react-native";
 import { router } from "expo-router";
 import { getCallHistory, type CallRecord } from "@/services/calls";
+import KeypadFab from "@/components/KeypadFab";
 
 const AVATAR_COLORS = ["#F1B296", "#B8D8CB", "#CDD0F6", "#F8D09A"];
 
@@ -114,6 +115,7 @@ export default function Recent() {
           </ScrollView>
         )}
       </View>
+      <KeypadFab />
     </SafeAreaView>
   );
 }

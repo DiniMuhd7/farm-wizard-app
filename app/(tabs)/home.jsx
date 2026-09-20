@@ -13,6 +13,34 @@ const keys = [
   ["*", ""], ["0", "+"], ["#", ""],
 ];
 
+// Building the E.164 destination used to just be `${country.code}${digits}`,
+// which blindly prepends the country code no matter what the user typed.
+// Typing a local number with a leading trunk "0" (e.g. "0801 234 5678", the
+// normal way to dial locally in Nigeria/UK/much of the world) produced
+// "+2340801234567" — a syntactically-valid-looking but real destination
+// that Twilio dials and fails fast on, since the digit after the country
+// code is wrong. Same problem if someone typed the number already including
+// "+" or the country code: it got double-prefixed into garbage. This is the
+// most likely explanation for a call ringing briefly then immediately
+// hearing "unavailable" — Twilio was asked to dial a malformed number.
+function normalizeDestination(rawInput, callingCode) {
+  const trimmed = rawInput.trim();
+  if (trimmed.startsWith("+")) {
+    // Already a full international number — use exactly what was typed.
+    return `+${trimmed.replace(/\D/g, "")}`;
+  }
+  const digits = trimmed.replace(/\D/g, "");
+  const callingDigits = callingCode.replace(/\D/g, "");
+  if (digits.startsWith(callingDigits)) {
+    // Typed the country code digits without a leading "+".
+    return `+${digits}`;
+  }
+  // Local format: drop a leading trunk "0" (if present) before prepending
+  // the country code — the standard local-to-E.164 conversion.
+  const local = digits.replace(/^0+/, "");
+  return `${callingCode}${local}`;
+}
+
 // Real DTMF (dual-tone multi-frequency) tones — the actual sound a phone
 // keypad makes — one per key. require() needs static string literals, so
 // this can't be built from a loop; the filenames match assets/sounds/dtmf.
@@ -59,6 +87,17 @@ export default function DialPad() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // Configure the audio session once, explicitly, rather than relying on
+      // expo-av's defaults — without this, rapid repeated playback of short
+      // SFX (a fast sequence of keypresses) can play back inconsistently on
+      // some devices, which is consistent with "tone doesn't always match
+      // the key" and "sometimes no sound at all".
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        shouldDuckAndroid: true,
+      }).catch(() => undefined);
+
       const entries = await Promise.all(
         Object.entries(DTMF_SOUNDS).map(async ([key, source]) => {
           try {
@@ -81,13 +120,64 @@ export default function DialPad() {
     };
   }, []);
 
+  const playDtmf = async (key) => {
+    const sound = soundsRef.current[key];
+    if (sound) {
+      // Explicit stop + seek-to-0 + play, rather than replayAsync(). If a
+      // key is tapped again before the previous tone finished, replayAsync()
+      // racing against still-in-progress playback is what produced tones
+      // that didn't match the key just pressed; this sequence is the more
+      // defensive, well-documented way to force a clean restart.
+      try {
+        await sound.stopAsync();
+        await sound.setPositionAsync(0);
+        await sound.playAsync();
+      } catch {
+        // ignore — a missed tone isn't worth surfacing to the user
+      }
+      return;
+    }
+    // Preloading hadn't finished yet (e.g. a key tapped in the first instant
+    // after this screen mounts) — load this one tone on demand so a press
+    // never silently produces nothing, and cache it for next time.
+    const source = DTMF_SOUNDS[key];
+    if (!source) return;
+    try {
+      const { sound: freshSound } = await Audio.Sound.createAsync(source, { shouldPlay: true });
+      soundsRef.current[key] = freshSound;
+    } catch {
+      // ignore
+    }
+  };
+
   const pressKey = (key) => {
     setNumber((value) => value + key);
     Haptics.selectionAsync().catch(() => undefined);
-    const sound = soundsRef.current[key];
-    if (sound) {
-      sound.replayAsync().catch(() => undefined);
+    playDtmf(key);
+  };
+
+  // Long-press "0" to insert "+" — the "+" shown under "0" was previously
+  // just decorative text with nothing wired to it. This is the standard
+  // phone-dialer convention (iOS and Android both do this), not a custom
+  // gesture. zeroHeldRef suppresses the short-press "0" that would
+  // otherwise also fire on release right after a long-press — Pressable
+  // fires onPress on release regardless of whether onLongPress already
+  // fired, so without this guard a long-press would insert "0+" instead of
+  // just "+".
+  const zeroHeldRef = useRef(false);
+  const handleZeroPress = () => {
+    if (zeroHeldRef.current) {
+      zeroHeldRef.current = false;
+      return;
     }
+    pressKey("0");
+  };
+  const handleZeroLongPress = () => {
+    zeroHeldRef.current = true;
+    setNumber((value) => value + "+");
+    Haptics.selectionAsync().catch(() => undefined);
+    // "+" isn't a real DTMF tone (it's a dialing convention, not a signal
+    // Twilio sends) — haptic-only feedback here is correct, not a gap.
   };
 
   // Navigate to the call screen immediately rather than waiting here for
@@ -99,7 +189,7 @@ export default function DialPad() {
   // "Connecting…" the moment it mounts, so nothing here needs to wait.
   const startCall = (video = false) => {
     if (!digits) return Alert.alert("Enter a number", "Choose a contact or enter the number you want to call.");
-    const destination = `${country.code}${digits}`;
+    const destination = normalizeDestination(number, country.code);
     router.push({ pathname: "/(screens)/call", params: { number: destination, video: video ? "true" : "false" } });
   };
 
@@ -140,7 +230,13 @@ export default function DialPad() {
 
         <View style={styles.pad}>
           {keys.map(([key, letters]) => (
-            <Pressable key={key} onPress={() => pressKey(key)} style={styles.key}>
+            <Pressable
+              key={key}
+              onPress={key === "0" ? handleZeroPress : () => pressKey(key)}
+              onLongPress={key === "0" ? handleZeroLongPress : undefined}
+              delayLongPress={350}
+              style={styles.key}
+            >
               <Text style={styles.keyNumber}>{key}</Text>
               <Text style={styles.letters}>{letters}</Text>
             </Pressable>

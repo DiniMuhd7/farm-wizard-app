@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import NetInfo from "@react-native-community/netinfo";
 import Constants from "expo-constants";
 import uuid from "react-native-uuid";
 import client from "@/config/client";
@@ -11,11 +12,22 @@ export const useLoginContext = () => useContext(LoginContext);
 
 const CACHED_USER_KEY = "cachedUser";
 const GUEST_DEVICE_ID_KEY = "guest-device-id";
+// A placeholder identity used the moment there's no connectivity (or the
+// real guest sign-in request fails for any reason), so the app is usable
+// immediately instead of stuck waiting on a network call that can't
+// complete. It carries no real token — anything that genuinely needs the
+// server (call history, numbers, placing an actual call) still correctly
+// asks for a connection when it's attempted, exactly as it would for
+// anyone offline. This only unblocks the parts of the UI that don't.
+const LOCAL_GUEST_KEY = "localGuestUser";
 
 const LoginProvider = ({ children }) => {
   const [isLogged, setIsLogged] = useState(false);
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  // Guards against overlapping reconciliation attempts if connectivity
+  // flickers on/off rapidly.
+  const reconcilingRef = useRef(false);
 
   // Persist the user so the session can be restored instantly on next launch,
   // even before (or without) the server confirming the token.
@@ -27,11 +39,11 @@ const LoginProvider = ({ children }) => {
     }
   }, [user]);
 
-  // Starts an anonymous session automatically so nobody has to tap through
-  // a login screen to use the dialer. The same device id is reused across
-  // launches (see sign-in.jsx's manual guest button, which shares it), so
-  // this always resolves to the same guest account rather than creating a
-  // new throwaway one every cold start.
+  // Starts a real, server-confirmed anonymous session. The same device id is
+  // reused across launches (see sign-in.jsx's manual guest button, and the
+  // local-guest fallback below, which share it), so this always resolves to
+  // the same guest account rather than creating a new throwaway one every
+  // time.
   const startGuestSession = async () => {
     let deviceId = await AsyncStorage.getItem(GUEST_DEVICE_ID_KEY);
     if (!deviceId) {
@@ -43,9 +55,45 @@ const LoginProvider = ({ children }) => {
     if (result?.data?.success && result.data?.data?.user) {
       setUser(result.data.data.user);
       setIsLogged(true);
+      await AsyncStorage.removeItem(LOCAL_GUEST_KEY);
       return true;
     }
     return false;
+  };
+
+  const loadOrCreateLocalGuest = async () => {
+    const existing = await AsyncStorage.getItem(LOCAL_GUEST_KEY);
+    if (existing) return JSON.parse(existing);
+    const localUser = {
+      fullName: "Guest",
+      isGuest: true,
+      isLocalOnly: true,
+      avatar: 0,
+    };
+    await AsyncStorage.setItem(LOCAL_GUEST_KEY, JSON.stringify(localUser));
+    return localUser;
+  };
+
+  const enterAsLocalGuest = async () => {
+    const localUser = await loadOrCreateLocalGuest();
+    setUser(localUser);
+    setIsLogged(true);
+  };
+
+  // Upgrades a local-only guest to a real, server-confirmed one. Called once
+  // connectivity is restored (see the NetInfo listener below) and again on
+  // every cold start, before ever falling back to local. Silent on failure —
+  // the person just keeps using the local guest they already have.
+  const reconcileWithServer = async () => {
+    if (reconcilingRef.current) return;
+    reconcilingRef.current = true;
+    try {
+      await startGuestSession();
+    } catch (error) {
+      console.log("Guest reconciliation deferred:", error?.message);
+    } finally {
+      reconcilingRef.current = false;
+    }
   };
 
   const fetchUser = async () => {
@@ -53,22 +101,34 @@ const LoginProvider = ({ children }) => {
     const token = await AsyncStorage.getItem("token");
 
     if (token === null) {
-      // No session yet — fresh install, or after a manual sign-out. Rather
-      // than stopping at a login screen, sign in as a guest automatically;
-      // a real account is only needed later, for things a guest shouldn't
-      // do unsupervised (e.g. provisioning a number — see settings.tsx).
+      // No session yet — fresh install, or after a manual sign-out. Check
+      // connectivity first rather than waiting out a request that can't
+      // succeed: if we're offline, skip straight to the local guest.
       try {
-        const started = await startGuestSession();
-        if (started) {
-          setLoading(false);
-          return;
+        const netState = await NetInfo.fetch();
+        const hasConnectivity = netState.isConnected && netState.isInternetReachable !== false;
+        if (hasConnectivity) {
+          const started = await startGuestSession();
+          if (started) {
+            setLoading(false);
+            return;
+          }
         }
       } catch (error) {
-        // No network, backend unreachable, etc. — fall through to the
-        // signed-out state below so the app still has something to show
-        // rather than hanging on a blank screen.
         console.log("Automatic guest sign-in deferred:", error?.message);
       }
+
+      try {
+        await enterAsLocalGuest();
+        setLoading(false);
+        return;
+      } catch (error) {
+        // AsyncStorage itself failing is the only way to actually land here
+        // — genuinely rare, but fall through to a real signed-out state
+        // rather than pretend everything's fine.
+        console.log("Local guest fallback failed:", error?.message);
+      }
+
       setUser({});
       setIsLogged(false);
       setLoading(false);
@@ -117,6 +177,19 @@ const LoginProvider = ({ children }) => {
     fetchUser();
   }, []);
 
+  // If currently on a local-only guest, upgrade to a real one the moment the
+  // device regains connectivity — entirely in the background, no UI
+  // interruption, no re-render the person has to wait through.
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const online = state.isConnected && state.isInternetReachable !== false;
+      if (online && user?.isLocalOnly) {
+        reconcileWithServer();
+      }
+    });
+    return () => unsubscribe();
+  }, [user]);
+
   return (
     <LoginContext.Provider
       value={{
@@ -126,6 +199,10 @@ const LoginProvider = ({ children }) => {
         setUser,
         loading,
         setLoading,
+        // Lets a screen (e.g. app/index.jsx's failure-state retry) re-run
+        // the same auto-guest-sign-in logic on demand, instead of ever
+        // needing to fall back to a manual login screen.
+        refreshSession: fetchUser,
       }}
     >
       {children}

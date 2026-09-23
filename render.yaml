@@ -38,3 +38,15 @@ services:
         sync: false
       - key: TWILIO_ALLOWED_DESTINATION_PREFIXES
         sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: FLW_SECRET_KEY
+        sync: false
+      - key: FLW_SECRET_HASH
+        sync: false
+      - key: NUMBER_PRICE_USD_CENTS
+        value: "500"
+      - key: NUMBER_PRICE_NGN
+        value: "3000"

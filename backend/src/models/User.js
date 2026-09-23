@@ -35,6 +35,11 @@ const userSchema = new mongoose.Schema(
     // The user's assigned 9tel number (E.164). Populated by
     // POST /api/v1/numbers/provision. Unset until they claim one.
     phoneNumber: { type: String, unique: true, sparse: true },
+    // The user's own real phone number, used as their outbound caller ID
+    // once verified. Distinct from phoneNumber above (that's a Twilio
+    // number this system owns; this is a number they already had before
+    // ever using 9tel) — see controllers/callerid.
+    verifiedCallerId: { type: String, unique: true, sparse: true },
     isPremium: { type: Boolean, default: false },
     premiumUntil: Date,
     status: { type: String, enum: ["active", "inactive"], default: "active" },

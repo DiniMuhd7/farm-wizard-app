@@ -29,7 +29,7 @@ export default function CustomBottomTab({ state, navigation }: BottomTabBarProps
           const active = state.index === routeIndex;
           const Icon = meta.icon;
 
-          const onPress = () => {
+          const navigateToTab = () => {
             const event = navigation.emit({
               type: "tabPress",
               target: route.key,
@@ -45,7 +45,18 @@ export default function CustomBottomTab({ state, navigation }: BottomTabBarProps
               key={route.key}
               accessibilityRole="tab"
               accessibilityState={{ selected: active }}
-              onPress={onPress}
+              // onPressIn, not onPress: onPress only fires after a full
+              // touch-down-then-up cycle that also has to pass React
+              // Native's own "was this a tap or the start of a drag"
+              // check (PRESS_RETENTION_OFFSET) — any small thumb movement,
+              // which is completely normal when reaching for a tab at the
+              // bottom of the screen, can get silently treated as a
+              // cancelled press, so onPress never fires at all. The next,
+              // more careful/stationary tap then works — which is exactly
+              // "requires multiple taps". onPressIn fires immediately on
+              // touch-down, before that cancellation logic applies.
+              onPressIn={navigateToTab}
+              hitSlop={{ top: 10, bottom: 10, left: 6, right: 6 }}
               style={s.tab}
             >
               <View style={[s.icon, active && s.activeIcon]}>

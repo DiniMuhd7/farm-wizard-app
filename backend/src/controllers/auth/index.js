@@ -16,6 +16,8 @@ const getUserInfo = (user) => ({
   avatar: user.avatar || "",
   notification_token: user.notification_token || "",
   isGuest: user.isGuest === true,
+  phoneNumber: user.phoneNumber || null,
+  verifiedCallerId: user.verifiedCallerId || null,
 });
 
 const issueGuestSession = async (req, res) => {

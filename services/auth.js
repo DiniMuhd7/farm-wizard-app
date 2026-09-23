@@ -8,7 +8,6 @@ export const signUpUser = async (
   selectedLanguage,
   selectedCountry,
   selectedIndex
-  // notification_token
 ) => {
   try {
     const response = await client.post(
@@ -19,20 +18,25 @@ export const signUpUser = async (
         password,
         country: selectedCountry,
         language: selectedLanguage,
-        notification_token: "totif-token",
         avatar: selectedIndex,
       },
       {
         headers: {
-          // Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
       }
     );
 
-    if (response.status === 200 && response.data.success) {
-      const token = response.data.token;
-      //await AsyncStorage.setItem("token", token);
+    // registerUser's response is { success, message, data: { user, token } }
+    // (goodResponse's shape) — the token lives at response.data.data.token,
+    // not response.data.token. It was also never actually stored (the
+    // AsyncStorage call was commented out), which meant every newly
+    // registered account was forced straight back to a manual sign-in
+    // immediately after registering, even though the backend had already
+    // issued a perfectly good session.
+    if (response.status === 200 && response.data?.success) {
+      const token = response.data?.data?.token;
+      if (token) await AsyncStorage.setItem("token", token);
     }
     return response;
   } catch (error) {

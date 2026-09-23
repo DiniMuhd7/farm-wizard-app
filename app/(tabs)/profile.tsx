@@ -7,7 +7,7 @@ import { useLoginContext } from "@/context/LoginProvider";
 import { getMyNumber } from "@/services/numbers";
 
 const items = [
-  { label: "Account details", detail: "Manage your personal information", icon: UserRound, color: "#E5E0FF" },
+  { label: "Account details", detail: "Manage your personal information", icon: UserRound, color: "#E5E0FF", route: "/(tabs)/(sub-tabs)/editProfile" },
   { label: "Calling plan", detail: "9tel Plus · Active", icon: Crown, color: "#FFF0CC" },
   { label: "Payment methods", detail: "Add or update your payment method", icon: CreditCard, color: "#CBF1E3" },
   { label: "Privacy & security", detail: "Control your data and preferences", icon: ShieldCheck, color: "#DCEBFF" },
@@ -79,8 +79,12 @@ export default function Profile() {
 
         <Text style={s.heading}>Account</Text>
         <View style={s.menu}>
-          {items.map(({ label, detail, icon: Icon, color }) => (
-            <Pressable key={label} style={s.item} onPress={() => Alert.alert(label, "This section is ready for your account details.")}>
+          {items.map(({ label, detail, icon: Icon, color, route }) => (
+            <Pressable
+              key={label}
+              style={s.item}
+              onPress={() => (route ? router.push(route as any) : Alert.alert(label, "This section is ready for your account details."))}
+            >
               <View style={[s.itemIcon, { backgroundColor: color }]}>
                 <Icon size={20} color="#5147AF" />
               </View>

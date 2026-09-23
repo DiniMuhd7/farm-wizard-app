@@ -13,8 +13,25 @@ const externalAPIs = require("./src/routes/external-apis");
 const voice = require("./src/routes/voice");
 const numbers = require("./src/routes/numbers");
 const calls = require("./src/routes/calls");
+const callerid = require("./src/routes/callerid");
+const payments = require("./src/routes/payments");
+const { stripeWebhook } = require("./src/controllers/payments");
 
 const app = express();
+
+// Stripe's webhook signature is computed over the exact raw request bytes —
+// if express.json() (below) parses and re-serializes the body first, the
+// bytes stripe.webhooks.constructEvent() sees will never byte-for-byte
+// match what Stripe actually signed, and verification will always fail.
+// This route MUST be registered before the global express.json() call, with
+// its own express.raw() middleware applying only to this one path — once a
+// body stream is consumed by one parser, no later middleware can re-read
+// the original raw bytes.
+app.post(
+  "/api/v1/payments/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  stripeWebhook
+);
 
 // Middleware
 app.use(express.json());
@@ -52,6 +69,8 @@ app.use("/api/v1/external-apis", externalAPIs);
 app.use("/api/v1/voice", voice);
 app.use("/api/v1/numbers", numbers);
 app.use("/api/v1/calls", calls);
+app.use("/api/v1/callerid", callerid);
+app.use("/api/v1/payments", payments);
 
 // Start Server
 const PORT = process.env.PORT || 5000;

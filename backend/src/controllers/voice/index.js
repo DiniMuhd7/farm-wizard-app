@@ -1,4 +1,5 @@
 const crypto = require("crypto");
+const { twilioRequestIsValid, escapedXml } = require("../../utils/twilioSignature");
 
 const TOKEN_TTL_SECONDS = 60 * 60;
 const E164 = /^\+[1-9]\d{6,14}$/;
@@ -40,26 +41,11 @@ function createVoiceAccessToken(identity) {
   return `${signingInput}.${signature}`;
 }
 
-function escapedXml(value) {
-  return value.replace(/[<>&'\"]/g, (character) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", "\"": "&quot;" })[character]);
-}
-
 function isAllowedDestination(destination) {
   if (CLIENT_IDENTITY.test(destination)) return true;
   if (!E164.test(destination)) return false;
   const prefixes = (process.env.TWILIO_ALLOWED_DESTINATION_PREFIXES || "").split(",").map((value) => value.trim()).filter(Boolean);
   return prefixes.length > 0 && prefixes.some((prefix) => destination.startsWith(prefix));
-}
-
-function twilioRequestIsValid(req) {
-  const authToken = process.env.TWILIO_AUTH_TOKEN;
-  const publicBaseUrl = process.env.PUBLIC_BASE_URL;
-  if (!authToken || !publicBaseUrl) return false;
-  const url = `${publicBaseUrl.replace(/\/$/, "")}${req.originalUrl}`;
-  const params = Object.keys(req.body || {}).sort().map((key) => `${key}${req.body[key]}`).join("");
-  const expected = crypto.createHmac("sha1", authToken).update(url + params).digest("base64");
-  const received = req.get("X-Twilio-Signature") || "";
-  return received.length === expected.length && crypto.timingSafeEqual(Buffer.from(received), Buffer.from(expected));
 }
 
 exports.issueToken = (req, res) => {
@@ -75,7 +61,20 @@ exports.issueToken = (req, res) => {
 exports.outgoingCallTwiML = async (req, res) => {
   if (!twilioRequestIsValid(req)) return res.status(403).type("text/plain").send("Invalid Twilio signature");
   const destination = String(req.body?.To || "").trim();
-  const callerId = process.env.TWILIO_CALLER_ID;
+
+  // Use the calling user's own verified phone number as their caller ID if
+  // they have one (see controllers/callerid — verified via a Twilio-placed
+  // phone call, the only way a non-Twilio-owned number is legitimately
+  // usable as an outbound caller ID), falling back to the single shared
+  // TWILIO_CALLER_ID for anyone who hasn't verified one yet.
+  const from = String(req.body?.From || "");
+  const callerMatch = from.match(/^client:user-([A-Za-z0-9]+)$/);
+  let callerId = process.env.TWILIO_CALLER_ID;
+  if (callerMatch) {
+    const User = require("../../models/User");
+    const caller = await User.findById(callerMatch[1]).select("verifiedCallerId").lean();
+    if (caller?.verifiedCallerId) callerId = caller.verifiedCallerId;
+  }
   if (!callerId || !E164.test(callerId)) return res.status(503).type("text/plain").send("Voice caller ID is not configured");
   const baseUrl = `${process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/v1/voice/outgoing/status`;
   const action = escapedXml(baseUrl);

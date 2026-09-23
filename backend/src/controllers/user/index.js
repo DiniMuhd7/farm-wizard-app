@@ -21,16 +21,21 @@ const updateUserDetails = async (req, res) => {
   }
 
   try {
-    let hashedPassword = user.password; // fallback if not updating password
-
+    const update = { fullName, avatar };
+    // Password change was silently broken: a hash was computed below but
+    // never actually included in the update object, so submitting a new
+    // password always reported "success" while leaving the old password
+    // in place untouched.
     if (newPassword) {
-      hashedPassword = await bcrypt.hash(newPassword, 8);
+      update.password = await bcrypt.hash(newPassword, 8);
     }
     const userDetails = await User.findOneAndUpdate(
       { _id: user._id },
-      // { fullName, avatar, password: hashedPassword },
-      { fullName, avatar },
-      { upsert: true, new: true }
+      update,
+      // upsert is deliberately omitted — req.user._id always already exists
+      // (protect just loaded it), so upsert could only ever matter by
+      // creating a malformed document missing required fields like email.
+      { new: true }
     );
     res
       .status(200)

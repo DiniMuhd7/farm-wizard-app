@@ -12,16 +12,19 @@ import { useCountryData } from "../../hooks/useCountryData";
 import { useLanguageData } from "../../hooks/useLanguageData";
 import { useTranslation } from "react-i18next";
 import { languageMap } from "@/utils/languageMap";
+import { useLoginContext } from "@/context/LoginProvider";
 
 const screenHeight = Dimensions.get("window").height;
 const LANGUAGE_KEY = "user-language";
 
 const SignUp = () => {
+  const { setUser, setIsLogged } = useLoginContext();
   const [isSubmitting, setSubmitting] = useState(false);
   // Sensible defaults so the form can be submitted quickly; user can change them.
   const [selectedLanguage, setSelectedLanguage] = useState('english')
   const [selectedCountry, setSelectedCountry] = useState('ng')
   const [form, setForm] = useState({
+    fullName: "",
     email: "",
     password: "",
     cpassword: ""
@@ -52,7 +55,6 @@ const SignUp = () => {
     });
 
     if (isValid) {
-      // console.log("Submitting ✅", { ...form, selectedLanguage, selectedCountry });
       setSubmitting(true);
       try {
         const result = await signUpUser(form.fullName, (form.email).toLowerCase(), form.password, selectedLanguage, selectedCountry, selectedIndex);
@@ -60,13 +62,18 @@ const SignUp = () => {
           Alert.alert("Error", result.data.message)
           return;
         }
-        Alert.alert("Success", result.data.message);
-        // setUser(result.data.user);
-        // setIsLogged(true);
-        setTimeout(() => {
-          router.replace("/sign-in");
-        }, 2000);
-        await changeLanguage(capitalizeFirstLetter(selectedLanguage))
+        // signUpUser already stored the real session token on success (see
+        // its own fix), so the account is genuinely signed in at this point
+        // — update context to reflect that instead of discarding the
+        // response and forcing a redundant manual sign-in right after
+        // someone just registered.
+        const newUser = result.data?.data?.user;
+        if (newUser) {
+          setUser(newUser);
+          setIsLogged(true);
+        }
+        await changeLanguage(capitalizeFirstLetter(selectedLanguage));
+        router.replace("/verify-phone");
 
       } catch (error) {
         Alert.alert("Error occured", error.message);

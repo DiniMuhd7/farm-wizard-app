@@ -1,17 +1,16 @@
 import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Bell, ChevronRight, CreditCard, Crown, HelpCircle, PhoneCall, Settings, ShieldCheck, UserRound } from "lucide-react-native";
+import { ChevronRight, Crown, HelpCircle, PhoneCall, Settings, ShieldCheck, UserRound } from "lucide-react-native";
 import { router } from "expo-router";
 import { useLoginContext } from "@/context/LoginProvider";
 import { getMyNumber } from "@/services/numbers";
 
 const items = [
   { label: "Account details", detail: "Manage your personal information", icon: UserRound, color: "#E5E0FF", route: "/(tabs)/(sub-tabs)/editProfile" },
-  { label: "Calling plan", detail: "9tel Plus · Active", icon: Crown, color: "#FFF0CC" },
-  { label: "Payment methods", detail: "Add or update your payment method", icon: CreditCard, color: "#CBF1E3" },
-  { label: "Privacy & security", detail: "Control your data and preferences", icon: ShieldCheck, color: "#DCEBFF" },
-  { label: "Help & support", detail: "Get answers and contact us", icon: HelpCircle, color: "#FFE6C5" },
+  { label: "Calling plan", detail: "View your plan and calling benefits", icon: Crown, color: "#FFF0CC", route: "/(tabs)/(sub-tabs)/calling-plan" },
+  { label: "Privacy & security", detail: "Control your data and preferences", icon: ShieldCheck, color: "#DCEBFF", route: "/(tabs)/(sub-tabs)/privacy-security" },
+  { label: "Help & support", detail: "Get answers and contact us", icon: HelpCircle, color: "#FFE6C5", route: "/(tabs)/(sub-tabs)/help-support" },
 ];
 
 export default function Profile() {
@@ -83,7 +82,7 @@ export default function Profile() {
             <Pressable
               key={label}
               style={s.item}
-              onPress={() => (route ? router.push(route as any) : Alert.alert(label, "This section is ready for your account details."))}
+              onPress={() => route && router.push(route as any)}
             >
               <View style={[s.itemIcon, { backgroundColor: color }]}>
                 <Icon size={20} color="#5147AF" />

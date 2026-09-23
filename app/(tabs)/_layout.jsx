@@ -40,6 +40,10 @@ const TabsLayout = () => {
             tabBarButton: () => null,
           }}
         />
+        <Tabs.Screen name="(sub-tabs)/calling-plan" options={{ tabBarButton: () => null }} />
+        <Tabs.Screen name="(sub-tabs)/privacy-security" options={{ tabBarButton: () => null }} />
+        <Tabs.Screen name="(sub-tabs)/privacy-policy" options={{ tabBarButton: () => null }} />
+        <Tabs.Screen name="(sub-tabs)/help-support" options={{ tabBarButton: () => null }} />
       </Tabs>
       {!isPremiumUser &&
         <BannerAdComponent />

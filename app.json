@@ -79,13 +79,13 @@
         "origin": false
       },
       "eas": {
-        "projectId": "42125824-0d07-4357-bab6-ce648c8cb2bb"
+        "projectId": "eadad398-0cdc-4455-8c45-b6c5017e2489"
       }
     },
     "updates": {
       "enabled": true,
       "checkAutomatically": "ON_LOAD"
     },
-    "owner": "dshub"
+    "owner": "adamhub"
   }
 }

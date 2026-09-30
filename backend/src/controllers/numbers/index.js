@@ -70,6 +70,7 @@ exports.listAvailableCountries = async (req, res) => {
     const results = new Map();
     let nextIndex = 0;
     let firstError = null;
+    let errorCount = 0;
     const checkNext = async () => {
       while (nextIndex < countryCodes.length) {
         const countryCode = countryCodes[nextIndex++];
@@ -87,18 +88,29 @@ exports.listAvailableCountries = async (req, res) => {
           availableCountryCache.set(countryCode, { available: hasNumbers, checkedAt: Date.now() });
           results.set(countryCode, hasNumbers);
         } catch (error) {
+          errorCount += 1;
+          firstError ||= error;
           if (error.status === 404 || error.code === 20404) {
+            // Twilio simply doesn't sell numbers for this country — not a
+            // failure, just "no" for this one code.
             availableCountryCache.set(countryCode, { available: false, checkedAt: Date.now() });
-            results.set(countryCode, false);
-          } else {
-            firstError ||= error;
           }
+          // Any other per-country error (rate limiting, a transient network
+          // blip, an unsupported code, etc.) is treated the same way:
+          // that single country is left out of the "available" list rather
+          // than aborting the whole batch. Previously a single unexpected
+          // error anywhere in ~195 lookups threw and made every country
+          // fail to load — this is the bug being fixed here.
         }
       }
     };
 
     await Promise.all(Array.from({ length: Math.min(6, countryCodes.length) }, checkNext));
-    if (firstError) throw firstError;
+
+    // Only treat this as a hard failure if every single lookup errored out
+    // (e.g. invalid/misconfigured Twilio credentials) — a partial failure
+    // should still return whatever did succeed.
+    if (firstError && errorCount === countryCodes.length) throw firstError;
 
     return res.status(200).json({
       countryCodes: countryCodes.filter((countryCode) => results.get(countryCode)),

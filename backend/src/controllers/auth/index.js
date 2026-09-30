@@ -56,8 +56,12 @@ const issueGuestSession = async (req, res) => {
     }
 
     const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, { expiresIn: "1d" });
+    const activeTokens = (user.tokens || []).filter((entry) => {
+      const signedAt = Number.parseInt(entry.signedAt, 10);
+      return Number.isFinite(signedAt) && Date.now() - signedAt < 86400000;
+    });
     await User.findByIdAndUpdate(user._id, {
-      $push: { tokens: { token, signedAt: Date.now().toString() } },
+      tokens: [...activeTokens, { token, signedAt: Date.now().toString() }],
     });
     return goodResponse(res, "Guest session started", { user: getUserInfo(user), token }, 200);
   } catch (error) {

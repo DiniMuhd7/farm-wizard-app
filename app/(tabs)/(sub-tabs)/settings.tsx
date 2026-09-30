@@ -6,7 +6,7 @@ import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { getMyNumber } from "@/services/numbers";
 import { getVerifiedCallerId } from "@/services/callerid";
-import { checkNumberAvailability, createFlutterwaveCheckout, createStripeCheckout, getOrderStatus } from "@/services/payments";
+import { checkNumberAvailability, createFlutterwaveCheckout, createStripeCheckout, getAvailableNumberCountries, getOrderStatus } from "@/services/payments";
 import { useLoginContext } from "@/context/LoginProvider";
 import { useCountryData } from "@/hooks/useCountryData";
 
@@ -24,13 +24,19 @@ export default function Settings() {
   const [loadingCallerId, setLoadingCallerId] = useState(true);
 
   const { countries } = useCountryData();
+  const [availableCountries, setAvailableCountries] = useState<{ label: string; value: string }[]>([]);
+  const [loadingAvailableCountries, setLoadingAvailableCountries] = useState(false);
+  const [availableCountriesError, setAvailableCountriesError] = useState("");
+  const [countryRefreshKey, setCountryRefreshKey] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [step, setStep] = useState<FlowStep>("country");
   const [countrySearch, setCountrySearch] = useState("");
+  const [preferredCountryCode, setPreferredCountryCode] = useState("us");
   // "US" until the ipapi lookup below resolves (or fails, in which case it
   // just stays US) — previously this was never anything BUT "US", for
   // every user regardless of where they actually are.
   const [selectedCountry, setSelectedCountry] = useState<{ label: string; value: string }>({ label: "United States", value: "us" });
+  const selectedCountryRef = useRef(selectedCountry.value);
 
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [availabilityError, setAvailabilityError] = useState("");
@@ -57,7 +63,7 @@ export default function Settings() {
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((location) => {
         if (location.country_code && location.country_name) {
-          setSelectedCountry({ label: location.country_name, value: String(location.country_code).toLowerCase() });
+          setPreferredCountryCode(String(location.country_code).toLowerCase());
         }
       })
       .catch(() => undefined);
@@ -68,10 +74,46 @@ export default function Settings() {
   }, []);
 
   const filteredCountries = useMemo(() => {
-    if (!countrySearch.trim()) return countries;
+    if (!countrySearch.trim()) return availableCountries;
     const q = countrySearch.trim().toLowerCase();
-    return countries.filter((c: { label: string }) => c.label.toLowerCase().includes(q));
-  }, [countries, countrySearch]);
+    return availableCountries.filter((c) => c.label.toLowerCase().includes(q));
+  }, [availableCountries, countrySearch]);
+
+  useEffect(() => {
+    selectedCountryRef.current = selectedCountry.value;
+  }, [selectedCountry.value]);
+
+  useEffect(() => {
+    if (!modalOpen || !countries.length) return;
+    let cancelled = false;
+    setLoadingAvailableCountries(true);
+    setAvailableCountriesError("");
+    getAvailableNumberCountries(countries)
+      .then((countryCodes) => {
+        if (cancelled) return;
+        const available = countries.filter((country: { label: string; value: string }) =>
+          countryCodes.includes(country.value.toUpperCase()),
+        );
+        setAvailableCountries(available);
+        if (
+          available.length &&
+          !available.some((country) => country.value.toLowerCase() === selectedCountryRef.current.toLowerCase())
+        ) {
+          setSelectedCountry(
+            available.find((country) => country.value.toLowerCase() === preferredCountryCode) || available[0],
+          );
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) setAvailableCountriesError((error as Error).message);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingAvailableCountries(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [modalOpen, countries, countryRefreshKey, preferredCountryCode]);
 
   const closeModal = () => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -97,6 +139,11 @@ export default function Settings() {
       }
       if (!result.available) {
         setAvailabilityError(result.message);
+        const remainingCountries = availableCountries.filter(
+          (country) => country.value.toUpperCase() !== selectedCountry.value.toUpperCase(),
+        );
+        setAvailableCountries(remainingCountries);
+        if (remainingCountries.length) setSelectedCountry(remainingCountries[0]);
         return;
       }
       setPreviewNumber(result.phoneNumber);
@@ -195,6 +242,8 @@ export default function Settings() {
       );
       return;
     }
+    setCountrySearch("");
+    setAvailabilityError("");
     setModalOpen(true);
   };
 
@@ -316,26 +365,45 @@ export default function Settings() {
                 </View>
 
                 <ScrollView style={{ maxHeight: 320 }} keyboardShouldPersistTaps="handled">
-                  {filteredCountries.map((country: { label: string; value: string }) => (
+                  {loadingAvailableCountries ? (
+                    <View style={{ alignItems: "center", paddingVertical: 24 }}>
+                      <ActivityIndicator color="#5147AF" />
+                      <Text style={[s.noResults, { paddingBottom: 0 }]}>Checking number availability…</Text>
+                    </View>
+                  ) : availableCountriesError ? (
+                    <View>
+                      <Text style={s.noResults}>{availableCountriesError}</Text>
+                      <Text
+                        onPress={() => setCountryRefreshKey((key) => key + 1)}
+                        style={s.backLink}
+                      >
+                        Try again
+                      </Text>
+                    </View>
+                  ) : availableCountries.length === 0 ? (
+                    <Text style={s.noResults}>No countries currently have 9tel numbers available.</Text>
+                  ) : filteredCountries.map((country) => (
                     <Pressable key={country.value} style={s.countryRow} onPress={() => setSelectedCountry(country)}>
                       <Text style={s.countryLabel}>{country.label}</Text>
                       {selectedCountry.value === country.value && <View style={s.countryCheck} />}
                     </Pressable>
                   ))}
-                  {filteredCountries.length === 0 && (
+                  {!loadingAvailableCountries && !availableCountriesError && availableCountries.length > 0 && filteredCountries.length === 0 && (
                     <Text style={s.noResults}>No countries match "{countrySearch}"</Text>
                   )}
                 </ScrollView>
 
                 {!!availabilityError && <Text style={s.errorText}>{availabilityError}</Text>}
 
-                <Pressable style={s.confirmBtn} onPress={checkAvailability} disabled={checkingAvailability}>
-                  {checkingAvailability ? (
-                    <ActivityIndicator color="#FFF" />
-                  ) : (
-                    <Text style={s.confirmBtnText}>Check {selectedCountry.label} numbers</Text>
-                  )}
-                </Pressable>
+                {availableCountries.length > 0 && !loadingAvailableCountries && !availableCountriesError && (
+                  <Pressable style={s.confirmBtn} onPress={checkAvailability} disabled={checkingAvailability}>
+                    {checkingAvailability ? (
+                      <ActivityIndicator color="#FFF" />
+                    ) : (
+                      <Text style={s.confirmBtnText}>Check {selectedCountry.label} numbers</Text>
+                    )}
+                  </Pressable>
+                )}
               </>
             )}
 

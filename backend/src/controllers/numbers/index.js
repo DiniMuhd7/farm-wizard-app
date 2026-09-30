@@ -11,6 +11,8 @@ function twilioClient() {
 }
 
 const COUNTRY_CODE = /^[A-Z]{2}$/;
+const AVAILABLE_COUNTRY_CACHE_MS = 5 * 60 * 1000;
+const availableCountryCache = new Map();
 
 function assertValidCountryCode(countryCode) {
   if (!COUNTRY_CODE.test(countryCode)) {
@@ -48,6 +50,65 @@ exports.checkAvailability = async (req, res) => {
   } catch (error) {
     console.error("Unable to check number availability:", error.message);
     return res.status(error.status || 503).json({ message: error.status ? error.message : "Unable to check availability right now. Please try again later." });
+  }
+};
+
+exports.listAvailableCountries = async (req, res) => {
+  const countryCodes = [...new Set(
+    String(req.query?.countryCodes || "")
+      .split(",")
+      .map((code) => code.trim().toUpperCase())
+      .filter(Boolean)
+  )];
+
+  if (!countryCodes.length || countryCodes.length > 250 || countryCodes.some((code) => !COUNTRY_CODE.test(code))) {
+    return res.status(400).json({ message: "Provide between 1 and 250 valid ISO country codes." });
+  }
+
+  try {
+    const client = twilioClient();
+    const results = new Map();
+    let nextIndex = 0;
+    let firstError = null;
+    const checkNext = async () => {
+      while (nextIndex < countryCodes.length) {
+        const countryCode = countryCodes[nextIndex++];
+        const cached = availableCountryCache.get(countryCode);
+        if (cached && Date.now() - cached.checkedAt < AVAILABLE_COUNTRY_CACHE_MS) {
+          results.set(countryCode, cached.available);
+          continue;
+        }
+        try {
+          const available = await client.availablePhoneNumbers(countryCode).local.list({
+            voiceEnabled: true,
+            limit: 1,
+          });
+          const hasNumbers = available.length > 0;
+          availableCountryCache.set(countryCode, { available: hasNumbers, checkedAt: Date.now() });
+          results.set(countryCode, hasNumbers);
+        } catch (error) {
+          if (error.status === 404 || error.code === 20404) {
+            availableCountryCache.set(countryCode, { available: false, checkedAt: Date.now() });
+            results.set(countryCode, false);
+          } else {
+            firstError ||= error;
+          }
+        }
+      }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(6, countryCodes.length) }, checkNext));
+    if (firstError) throw firstError;
+
+    return res.status(200).json({
+      countryCodes: countryCodes.filter((countryCode) => results.get(countryCode)),
+    });
+  } catch (error) {
+    console.error("Unable to list countries with available numbers:", {
+      code: error.code || null,
+      status: error.status || null,
+    });
+    return res.status(503).json({ message: "Unable to load available countries right now. Please try again." });
   }
 };
 

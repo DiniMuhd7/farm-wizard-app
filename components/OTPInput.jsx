@@ -3,13 +3,12 @@ import {
     View,
     TextInput,
     StyleSheet,
-    Clipboard,
     Alert,
     Keyboard,
-    Platform,
     Text,
     TouchableOpacity,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import { forgetPassword } from '../services/auth';
 
 const OTP_LENGTH = 6; // 6-digit OTP
@@ -19,8 +18,8 @@ const OTPInput = ({ onSubmit, email }) => {
     const [otp, setOtp] = useState(new Array(OTP_LENGTH).fill(''));
     const [timer, setTimer] = useState(OTP_EXPIRY_TIME);
     const [resendEnabled, setResendEnabled] = useState(false);
-    const [lastSubmittedOtp, setLastSubmittedOtp] = useState(null);
     const inputs = useRef([]);
+    const submittedOtp = useRef(null);
 
     // Timer countdown for Resend OTP
     useEffect(() => {
@@ -38,20 +37,28 @@ const OTPInput = ({ onSubmit, email }) => {
     const handleChange = (text, index) => {
         const newOtp = [...otp];
 
-        if (text === '') {
+        const digits = text.replace(/\D/g, '');
+        if (!digits) {
             newOtp[index] = '';
+            submittedOtp.current = null;
             setOtp(newOtp);
             return;
         }
 
-        if (/^\d$/.test(text)) {
-            newOtp[index] = text;
-            setOtp(newOtp);
-            if (index < OTP_LENGTH - 1) {
-                inputs.current[index + 1].focus();
-            } else {
-                Keyboard.dismiss();
-            }
+        if (digits.length > 1) {
+            const pastedDigits = digits.slice(0, OTP_LENGTH).split('');
+            setOtp([...pastedDigits, ...new Array(OTP_LENGTH - pastedDigits.length).fill('')]);
+            if (pastedDigits.length === OTP_LENGTH) Keyboard.dismiss();
+            else inputs.current[pastedDigits.length]?.focus();
+            return;
+        }
+
+        newOtp[index] = digits;
+        setOtp(newOtp);
+        if (index < OTP_LENGTH - 1) {
+            inputs.current[index + 1]?.focus();
+        } else {
+            Keyboard.dismiss();
         }
     };
 
@@ -61,12 +68,14 @@ const OTPInput = ({ onSubmit, email }) => {
                 // If current field has a value, just clear it
                 const newOtp = [...otp];
                 newOtp[index] = '';
+                submittedOtp.current = null;
                 setOtp(newOtp);
             } else if (index > 0) {
                 // If empty, move focus to previous and clear it
-                inputs.current[index - 1].focus();
+                inputs.current[index - 1]?.focus();
                 const newOtp = [...otp];
                 newOtp[index - 1] = '';
+                submittedOtp.current = null;
                 setOtp(newOtp);
             }
         }
@@ -77,10 +86,11 @@ const OTPInput = ({ onSubmit, email }) => {
     useEffect(() => {
         if (otp.every(val => val !== '')) {
             const code = otp.join('');
-            if (/^\d{6}$/.test(code)) {
+            if (/^\d{6}$/.test(code) && submittedOtp.current !== code) {
+                submittedOtp.current = code;
                 onSubmit(code);
             } else {
-                Alert.alert('Invalid OTP', 'Please enter a valid 6-digit OTP.');
+                if (!/^\d{6}$/.test(code)) Alert.alert('Invalid OTP', 'Please enter a valid 6-digit OTP.');
             }
         }
     }, [otp]);
@@ -91,13 +101,8 @@ const OTPInput = ({ onSubmit, email }) => {
         try {
             const clipboardContent = await Clipboard.getString();
             if (/^\d{6}$/.test(clipboardContent)) {
-                if (clipboardContent !== lastSubmittedOtp) {
-                    const chars = clipboardContent.split('');
-                    setOtp(chars);
-                    Keyboard.dismiss();
-                    setLastSubmittedOtp(clipboardContent);
-                    onSubmit(clipboardContent);
-                }
+                setOtp(clipboardContent.split(''));
+                Keyboard.dismiss();
             }
         } catch (error) {
             console.log('Clipboard error:', error);
@@ -109,7 +114,8 @@ const OTPInput = ({ onSubmit, email }) => {
         setResendEnabled(false);
         setTimer(OTP_EXPIRY_TIME);
         setOtp(new Array(OTP_LENGTH).fill('')); // Reset OTP fields
-        inputs.current[0].focus(); // Focus on the first input
+        submittedOtp.current = null;
+        inputs.current[0]?.focus(); // Focus on the first input
         Keyboard.dismiss();
         try {
             const result = await forgetPassword(email);
@@ -121,7 +127,7 @@ const OTPInput = ({ onSubmit, email }) => {
                 Alert.alert("Error", result.data.message)
                 return;
             }
-            Alert.alert("Success", "OTP Re-Sent to your email");
+            Alert.alert("Success", "OTP re-sent to your email");
         } catch (error) {
             console.log(' error file resending:', error);
         }
@@ -134,21 +140,25 @@ const OTPInput = ({ onSubmit, email }) => {
                     <TextInput
                         key={index}
                         ref={el => (inputs.current[index] = el)}
-                        style={styles.input}
+                        accessibilityLabel={`Verification code digit ${index + 1}`}
+                        style={[styles.input, digit && styles.inputFilled]}
                         keyboardType="number-pad"
                         maxLength={1}
                         value={digit}
                         onChangeText={text => handleChange(text, index)}
                         onKeyPress={e => handleKeyPress(e, index)}
                         onFocus={handlePasteFromClipboard}
+                        selectionColor="#5147AF"
+                        textContentType={index === 0 ? "oneTimeCode" : undefined}
                     />
                 ))}
             </View>
 
             {timer > 0 ? (
-                <Text style={styles.timerText}>Resend OTP in {timer}s</Text>
+                <Text style={styles.timerText}>Resend code in <Text style={styles.timerValue}>{timer}s</Text></Text>
             ) : (
                 <TouchableOpacity
+                    accessibilityRole="button"
                     onPress={handleResendOTP}
                     disabled={!resendEnabled}
                     style={[styles.resendButton, resendEnabled ? {} : styles.disabledButton]}
@@ -162,44 +172,51 @@ const OTPInput = ({ onSubmit, email }) => {
 
 const styles = StyleSheet.create({
     container: {
-        flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 20
-
+        paddingVertical: 14,
     },
     otpContainer: {
         flexDirection: 'row',
         justifyContent: 'center',
-        marginBottom: 20,
+        marginBottom: 22,
     },
     input: {
-        borderBottomWidth: 2,
-        borderColor: '#007bff',
-        width: 40,
-        height: 50,
-        margin: 10,
+        backgroundColor: '#F8F8FD',
+        borderWidth: 1,
+        borderColor: '#E6E4F0',
+        borderRadius: 13,
+        width: 39,
+        height: 54,
+        marginHorizontal: 4,
         textAlign: 'center',
-        fontSize: 24,
-        fontWeight: 'bold',
+        fontSize: 21,
+        color: '#211B59',
+        fontFamily: 'Poppins-SemiBold',
+    },
+    inputFilled: {
+        borderColor: '#5147AF',
+        backgroundColor: '#F0EEFF',
     },
     timerText: {
-        fontSize: 16,
-        color: '#555',
-        marginBottom: 20,
+        fontSize: 12,
+        color: '#85829B',
+        fontFamily: 'Poppins-Regular',
     },
+    timerValue: { color: '#5147AF', fontFamily: 'Poppins-SemiBold' },
     resendButton: {
-        backgroundColor: '#007bff',
-        paddingVertical: 10,
-        paddingHorizontal: 20,
-        borderRadius: 5,
+        backgroundColor: '#EEECFF',
+        paddingVertical: 11,
+        paddingHorizontal: 18,
+        borderRadius: 13,
     },
     resendButtonText: {
-        color: '#fff',
-        fontSize: 16,
+        color: '#5147AF',
+        fontSize: 12,
+        fontFamily: 'Poppins-SemiBold',
     },
     disabledButton: {
-        backgroundColor: '#ccc',
+        opacity: 0.5,
     },
 });
 

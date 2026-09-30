@@ -1,10 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Bell, Delete, Globe2, Phone, Search, Video } from "lucide-react-native";
-import { router } from "expo-router";
+import { ArrowDownLeft, ArrowUpRight, Bell, Delete, Globe2, Phone, PhoneMissed, Search, Video, X } from "lucide-react-native";
+import { router, useFocusEffect } from "expo-router";
 import { Audio } from "expo-av";
 import * as Haptics from "expo-haptics";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { getCallHistory } from "@/services/calls";
+
+const CALLS_READ_AT_KEY = "home-call-notifications-read-at";
+
+function isMissedCall(call) {
+  return call.direction === "inbound" && call.status !== "completed";
+}
+
+function displayCallNumber(counterparty) {
+  const number = String(counterparty ?? "");
+  const clientMatch = number.match(/^client:user-(.+)$/);
+  return clientMatch ? `9tel user ${clientMatch[1].slice(0, 6)}` : number;
+}
 
 const keys = [
   ["1", ""], ["2", "ABC"], ["3", "DEF"],
@@ -62,8 +76,39 @@ const DTMF_SOUNDS = {
 export default function DialPad() {
   const [country, setCountry] = useState({ name: "Nigeria", code: "+234" });
   const [number, setNumber] = useState("");
+  const [callNotifications, setCallNotifications] = useState(null);
+  const [notificationsVisible, setNotificationsVisible] = useState(false);
+  const [unreadMissedCalls, setUnreadMissedCalls] = useState(0);
+  const [notificationsFailed, setNotificationsFailed] = useState(false);
   const digits = useMemo(() => number.replace(/\D/g, ""), [number]);
   const soundsRef = useRef({});
+
+  const loadCallNotifications = useCallback(async () => {
+    try {
+      const [records, lastReadAt] = await Promise.all([
+        getCallHistory(),
+        AsyncStorage.getItem(CALLS_READ_AT_KEY),
+      ]);
+      setCallNotifications(records.slice(0, 10));
+      setNotificationsFailed(false);
+      if (lastReadAt) {
+        const readTimestamp = new Date(lastReadAt).getTime();
+        setUnreadMissedCalls(records.filter(
+          (call) => isMissedCall(call) && new Date(call.at).getTime() > readTimestamp
+        ).length);
+      } else {
+        setUnreadMissedCalls(0);
+      }
+    } catch {
+      setCallNotifications([]);
+      setNotificationsFailed(true);
+      setUnreadMissedCalls(0);
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    loadCallNotifications();
+  }, [loadCallNotifications]));
 
   useEffect(() => {
     // country_name and country_calling_code both come from the same ipapi
@@ -201,9 +246,23 @@ export default function DialPad() {
             <Text style={styles.brand}>9tel</Text>
             <Text style={styles.welcome}>Crystal-clear calling, wherever you are.</Text>
           </View>
-          <Pressable style={styles.iconButton}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={unreadMissedCalls ? `${unreadMissedCalls} new missed calls` : "Call notifications"}
+            onPress={async () => {
+              setNotificationsVisible(true);
+              setUnreadMissedCalls(0);
+              await AsyncStorage.setItem(CALLS_READ_AT_KEY, new Date().toISOString()).catch(() => undefined);
+              await loadCallNotifications();
+            }}
+            style={styles.iconButton}
+          >
             <Bell color="#211B59" size={21} />
-            <View style={styles.notice} />
+            {unreadMissedCalls > 0 && (
+              <View style={styles.notice}>
+                <Text style={styles.noticeText}>{unreadMissedCalls > 9 ? "9+" : unreadMissedCalls}</Text>
+              </View>
+            )}
           </Pressable>
         </View>
 
@@ -255,6 +314,72 @@ export default function DialPad() {
           </Pressable>
         </View>
       </View>
+      <Modal
+        visible={notificationsVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setNotificationsVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <Pressable
+            accessibilityLabel="Close call notifications"
+            onPress={() => setNotificationsVisible(false)}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.notificationSheet}>
+            <View style={styles.sheetHeader}>
+              <View>
+                <Text style={styles.sheetTitle}>Call activity</Text>
+                <Text style={styles.sheetSubtitle}>Recent incoming, outgoing, and missed calls</Text>
+              </View>
+              <Pressable accessibilityLabel="Close" onPress={() => setNotificationsVisible(false)} style={styles.closeButton}>
+                <X size={19} color="#5147AF" />
+              </Pressable>
+            </View>
+            {callNotifications === null ? (
+              <View style={styles.notificationState}><ActivityIndicator color="#5147AF" /></View>
+            ) : notificationsFailed ? (
+              <View style={styles.notificationState}>
+                <Text style={styles.notificationEmpty}>Call activity is unavailable right now.</Text>
+              </View>
+            ) : callNotifications.length === 0 ? (
+              <View style={styles.notificationState}>
+                <Text style={styles.notificationEmpty}>Your call updates will appear here after your first call.</Text>
+              </View>
+            ) : (
+              <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.notificationList}>
+                {callNotifications.map((call) => {
+                  const missed = isMissedCall(call);
+                  const callNumber = displayCallNumber(call.counterparty);
+                  const canCallBack = /^\+?[0-9][0-9\s().-]{4,}$/.test(call.counterparty);
+                  const label = missed ? "Missed call" : call.direction === "outbound" ? "Outgoing call" : "Incoming call";
+                  return (
+                    <Pressable
+                      key={call.id}
+                      disabled={!canCallBack}
+                      onPress={() => {
+                        setNotificationsVisible(false);
+                        router.push({ pathname: "/(screens)/call", params: { number: call.counterparty } });
+                      }}
+                      style={styles.notificationRow}
+                    >
+                      <View style={[styles.callDirection, missed && styles.missedDirection]}>
+                        {missed ? <PhoneMissed size={17} color="#E66763" /> : call.direction === "inbound" ? <ArrowDownLeft size={17} color="#2EAF7D" /> : <ArrowUpRight size={17} color="#2EAF7D" />}
+                      </View>
+                      <View style={styles.notificationCopy}>
+                        <Text style={[styles.callLabel, missed && styles.missedText]}>{label}</Text>
+                        <Text style={styles.callNumber} numberOfLines={1}>{callNumber}</Text>
+                        <Text style={styles.callDate}>{new Date(call.at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}</Text>
+                      </View>
+                      {canCallBack && <Phone size={18} color="#5147AF" />}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -266,7 +391,8 @@ const styles = StyleSheet.create({
   brand: { color: "#211B59", fontFamily: "Poppins-Bold", fontSize: 28, letterSpacing: -1.5 },
   welcome: { color: "#85829B", fontFamily: "Poppins-Regular", fontSize: 11.5, marginTop: -4 },
   iconButton: { height: 45, width: 45, borderRadius: 15, backgroundColor: "#FFF", alignItems: "center", justifyContent: "center", shadowColor: "#29205F", shadowOpacity: 0.09, shadowRadius: 12, elevation: 3 },
-  notice: { height: 8, width: 8, borderRadius: 4, backgroundColor: "#FF6D63", position: "absolute", top: 10, right: 11, borderWidth: 1, borderColor: "#FFF" },
+  notice: { minWidth: 17, height: 17, paddingHorizontal: 4, borderRadius: 9, backgroundColor: "#FF6D63", position: "absolute", top: 5, right: 5, alignItems: "center", justifyContent: "center", borderWidth: 1, borderColor: "#FFF" },
+  noticeText: { color: "#FFF", fontFamily: "Poppins-SemiBold", fontSize: 8 },
   search: { height: 54, borderRadius: 18, backgroundColor: "#FFF", flexDirection: "row", alignItems: "center", paddingHorizontal: 16, shadowColor: "#29205F", shadowOpacity: 0.05, shadowRadius: 11, elevation: 2 },
   searchInput: { flex: 1, marginLeft: 10, color: "#211B59", fontFamily: "Poppins-Regular", fontSize: 12 },
   numberArea: { alignItems: "center", paddingTop: 27, paddingBottom: 15 },
@@ -282,4 +408,21 @@ const styles = StyleSheet.create({
   callRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 27, marginTop: 10 },
   video: { height: 51, width: 51, borderRadius: 18, backgroundColor: "#EEECFF", alignItems: "center", justifyContent: "center" },
   call: { height: 68, width: 68, borderRadius: 25, backgroundColor: "#5F56C6", alignItems: "center", justifyContent: "center", shadowColor: "#5147B6", shadowOpacity: 0.35, shadowRadius: 15, elevation: 7 },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(24,20,56,.38)", justifyContent: "flex-end" },
+  notificationSheet: { maxHeight: "78%", minHeight: 250, backgroundColor: "#F8F8FD", borderTopLeftRadius: 26, borderTopRightRadius: 26, paddingHorizontal: 20, paddingTop: 22, paddingBottom: 28 },
+  sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 17 },
+  sheetTitle: { color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 20 },
+  sheetSubtitle: { color: "#85829B", fontFamily: "Poppins-Regular", fontSize: 10.5, marginTop: 2 },
+  closeButton: { height: 38, width: 38, borderRadius: 13, backgroundColor: "#EEECFF", alignItems: "center", justifyContent: "center" },
+  notificationState: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
+  notificationEmpty: { color: "#85829B", fontFamily: "Poppins-Regular", fontSize: 12, textAlign: "center", lineHeight: 19 },
+  notificationList: { paddingBottom: 12 },
+  notificationRow: { backgroundColor: "#FFF", borderRadius: 17, minHeight: 76, paddingHorizontal: 13, paddingVertical: 11, flexDirection: "row", alignItems: "center", marginBottom: 9 },
+  callDirection: { height: 37, width: 37, borderRadius: 13, backgroundColor: "#E4F6EE", alignItems: "center", justifyContent: "center", marginRight: 11 },
+  missedDirection: { backgroundColor: "#FFE6E4" },
+  notificationCopy: { flex: 1, marginRight: 8 },
+  callLabel: { color: "#302C4C", fontFamily: "Poppins-Medium", fontSize: 11.5 },
+  missedText: { color: "#E66763" },
+  callNumber: { color: "#514D66", fontFamily: "Poppins-Regular", fontSize: 10.5, marginTop: 1 },
+  callDate: { color: "#9693A9", fontFamily: "Poppins-Regular", fontSize: 9, marginTop: 2 },
 });

@@ -142,27 +142,32 @@ const SECTIONS = [
 ];
 
 const TermsContent = () => (
-  <ScrollView className="flex-1 bg-white rounded-xl" showsVerticalScrollIndicator>
-    <View className="p-4">
-      <Text className="text-xl font-pbold text-black mb-2">Terms and Conditions</Text>
+  <ScrollView className="flex-1 bg-[#F8F7FC]" showsVerticalScrollIndicator>
+    <View className="p-5">
+      <Text className="text-[10px] text-[#827AAE] font-psemibold tracking-[1.5px] mb-2">
+        9TEL · YOUR AGREEMENT
+      </Text>
+      <Text className="text-xl font-pbold text-[#211B59] mb-2">Terms and Conditions</Text>
       {SECTIONS.map((section, idx) => (
-        <View key={section.title || idx} className="mb-3">
+        <View key={section.title || idx} className="mb-4">
           {section.title && (
-            <Text className="text-base font-psemibold text-black mb-1">{section.title}</Text>
+            <Text className="text-[14px] leading-5 font-psemibold text-[#30245E] mb-1.5">
+              {section.title}
+            </Text>
           )}
           {section.paragraphs?.map((p) => (
-            <Text key={p} className="text-sm text-black/80 leading-5 mb-1">
+            <Text key={p} className="text-xs text-[#57546A] leading-[19px] mb-1.5">
               {p}
             </Text>
           ))}
           {section.bullets?.map((b) => (
-            <View key={b} className="flex-row mb-1 pl-2">
-              <Text className="text-sm text-black/80 mr-2">{"•"}</Text>
-              <Text className="text-sm text-black/80 leading-5 flex-1">{b}</Text>
+            <View key={b} className="flex-row mb-2 pl-1">
+              <Text className="text-sm text-[#8272D1] mr-2">{"•"}</Text>
+              <Text className="text-xs text-[#57546A] leading-[19px] flex-1">{b}</Text>
             </View>
           ))}
           {section.footer && (
-            <Text className="text-sm text-black/80 leading-5 mt-1">{section.footer}</Text>
+            <Text className="text-xs text-[#57546A] leading-[19px] mt-1">{section.footer}</Text>
           )}
         </View>
       ))}

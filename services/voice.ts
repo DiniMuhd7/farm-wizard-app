@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Audio } from "expo-av";
-import { API_BASE } from "@/config/client";
+import { API_BASE, refreshGuestSession } from "@/config/client";
 
 // Real states a Call goes through, sourced from Twilio's own
 // twilio-voice-react-native GitHub issues showing `Call.Event.Ringing`,
@@ -152,11 +152,17 @@ function getVoice(): VoiceInstance {
 }
 
 async function accessToken() {
-  const sessionToken = await AsyncStorage.getItem("token");
+  let sessionToken = await AsyncStorage.getItem("token");
   if (!sessionToken) throw new Error("Sign in to place a call.");
-  const response = await fetch(`${API_BASE}/api/v1/voice/token`, {
+  let response = await fetch(`${API_BASE}/api/v1/voice/token`, {
     headers: { Authorization: `Bearer ${sessionToken}` },
   });
+  if (response.status === 401 && await refreshGuestSession()) {
+    sessionToken = await AsyncStorage.getItem("token");
+    response = await fetch(`${API_BASE}/api/v1/voice/token`, {
+      headers: { Authorization: `JWT ${sessionToken}` },
+    });
+  }
   if (!response.ok) throw new Error("Voice calling is unavailable. Please try again later.");
   const data = await response.json();
   if (!data.token) throw new Error("The voice service did not return an access token.");

@@ -25,6 +25,8 @@ const STATUS_LABEL: Record<CallStatus, string> = {
 
 export default function CallScreen() {
   const { number = "+234 801 234 5678", video } = useLocalSearchParams<{ number: string; video: string }>();
+  const displayNumber = Array.isArray(number) ? number[0] : number;
+  const initial = displayNumber.replace(/[^a-z0-9]/gi, "").charAt(0).toUpperCase() || "?";
   const [status, setStatus] = useState<CallStatus>("connecting");
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(false);
@@ -59,7 +61,7 @@ export default function CallScreen() {
     if (existingCall) {
       attach(existingCall);
     } else {
-      startVoiceCall(number)
+      startVoiceCall(displayNumber)
         .then(attach)
         .catch((error) => {
           if (cancelled) return;
@@ -71,7 +73,7 @@ export default function CallScreen() {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [number]);
+  }, [displayNumber]);
 
   // Pulse animation runs the whole time the screen is open, independent of
   // call state — purely decorative.
@@ -128,10 +130,10 @@ export default function CallScreen() {
         <View style={s.contact}>
           <Animated.View style={[s.ring, { transform: [{ scale: pulse }] }]} />
           <View style={s.avatar}>
-            <Text style={s.initial}>A</Text>
+            <Text style={s.initial}>{initial}</Text>
           </View>
-          <Text style={s.name}>Aisha Bello</Text>
-          <Text style={s.number}>{number}</Text>
+          <Text style={s.name}>{displayNumber}</Text>
+          <Text style={s.number}>Phone number</Text>
           <View style={s.status}>
             <View style={s.live} />
             <Text style={s.statusText}>

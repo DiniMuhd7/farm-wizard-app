@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { View, Text, Dimensions, Alert } from "react-native";
+import { View, Text, Alert } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-aware-scroll-view";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { CustomButton, FormField } from "../../components";
 import { signUpUser } from "@/services/auth";
-import SelectField, { CustomSelectField } from "../../components/SelectField";
+import { CustomSelectField } from "../../components/SelectField";
 import { validateForm } from "../../utils/validateForm";
 import { useCountryData } from "../../hooks/useCountryData";
 import { useLanguageData } from "../../hooks/useLanguageData";
@@ -14,7 +14,6 @@ import { useTranslation } from "react-i18next";
 import { languageMap } from "@/utils/languageMap";
 import { useLoginContext } from "@/context/LoginProvider";
 
-const screenHeight = Dimensions.get("window").height;
 const LANGUAGE_KEY = "user-language";
 
 const SignUp = () => {
@@ -35,8 +34,8 @@ const SignUp = () => {
   // so this is just a fixed placeholder for signUpUser's existing signature.
   const selectedIndex = 0;
 
-  const { countries, loading: countryLoading } = useCountryData();
-  const { languages, loading: langLoading } = useLanguageData();
+  const { countries } = useCountryData();
+  const { languages } = useLanguageData();
 
   function capitalizeFirstLetter(str) {
     return str.charAt(0).toUpperCase() + str.slice(1);
@@ -114,95 +113,109 @@ const SignUp = () => {
     }
   };
   return (
-    <SafeAreaView className="bg-primary h-full flex justify-center items-center" style={{ backgroundColor: "#211B59" }}>
-      <Text className="text-white text-3xl font-primary mb-2">CREATE ACCOUNT</Text>
-
+    <SafeAreaView className="flex-1 bg-[#171342]" style={{ backgroundColor: "#171342" }}>
       <KeyboardAwareScrollView
         enableOnAndroid
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ flexGrow: 1 }}
-        // className="px-4 py-6"
-        style={{ maxHeight: screenHeight * 0.6 }}
+        contentContainerStyle={{ flexGrow: 1, paddingHorizontal: 20, paddingTop: 24, paddingBottom: 28 }}
+        style={{ flex: 1 }}
       >
-        <View className="border-r-4 border-r-[#E1CE67] p-4">
+        <View className="flex-1">
+          <View className="flex-row items-center mb-7">
+            <View className="w-12 h-12 rounded-2xl bg-[#FCC200] items-center justify-center">
+              <Text className="text-[#211B59] text-2xl font-pbold">9</Text>
+            </View>
+            <View className="ml-3">
+              <Text className="text-white text-2xl font-pbold tracking-tight">9tel</Text>
+              <Text className="text-[#CFCBFF] text-xs font-pregular">SIMPLE. SECURE. CONNECTED.</Text>
+            </View>
+          </View>
 
-          <FormField
-            title={t("fullname")}
-            value={form.fullName}
-            placeholder="e.g. John Doe"
-            handleChangeText={(e) => setForm({ ...form, fullName: e })}
-            otherStyles="mt-2"
-          />
-          {errors.fullName && <Text className="text-red-400 text-sm mt-1">{errors.fullName}</Text>}
+          <Text className="text-white text-[30px] leading-9 font-psemibold">Create your account</Text>
+          <Text className="text-[#CFCBFF] text-sm font-pregular mt-2 mb-6">
+            A few details and you’ll be ready to connect.
+          </Text>
 
-          <FormField
-            title={t("email")}
-            value={form.email}
-            placeholder="e.g. yourname@gmail.com"
-            handleChangeText={(e) => setForm({ ...form, email: e })}
-            otherStyles="mt-2"
-            keyboardType="email-address"
-          />
-          {errors.email && <Text className="text-red-400 text-sm mt-1">{errors.email}</Text>}
+          <View className="rounded-3xl border border-white/10 bg-[#211B59] p-5">
+            <FormField
+              title={t("fullname")}
+              value={form.fullName}
+              placeholder="e.g. John Doe"
+              handleChangeText={(e) => setForm({ ...form, fullName: e })}
+              otherStyles="mt-1"
+              variant="auth"
+            />
+            {errors.fullName && <Text className="text-red-400 text-sm mt-1">{errors.fullName}</Text>}
 
-          <FormField
-            title={t("password")}
-            placeholder="Password"
-            value={form.password}
-            handleChangeText={(e) => setForm({ ...form, password: e })}
-            otherStyles="mt-2"
-            secureTextEntry
-          />
-          {errors.password && <Text className="text-red-400 text-sm mt-1">{errors.password}</Text>}
+            <FormField
+              title={t("email")}
+              value={form.email}
+              placeholder="e.g. yourname@gmail.com"
+              handleChangeText={(e) => setForm({ ...form, email: e })}
+              otherStyles="mt-2"
+              variant="auth"
+              keyboardType="email-address"
+            />
+            {errors.email && <Text className="text-red-400 text-sm mt-1">{errors.email}</Text>}
 
-          <FormField
-            title={t("confirm_password")}
-            placeholder="Confirm Password"
-            value={form.cpassword}
-            handleChangeText={(e) => setForm({ ...form, cpassword: e })}
-            otherStyles="mt-2"
-            secureTextEntry
-          />
-          {errors.cpassword && <Text className="text-red-400 text-sm mt-1">{errors.cpassword}</Text>}
+            <FormField
+              title={t("password")}
+              placeholder="Password"
+              value={form.password}
+              handleChangeText={(e) => setForm({ ...form, password: e })}
+              otherStyles="mt-2"
+              variant="auth"
+              secureTextEntry
+            />
+            {errors.password && <Text className="text-red-400 text-sm mt-1">{errors.password}</Text>}
 
-          <CustomSelectField
-            title={t("select_country")}
-            selectedValue={selectedCountry}
-            options={countries}
-            handleValueChange={setSelectedCountry}
-            otherStyles="mt-2"
-          />
-          {errors.country && <Text className="text-red-400 text-sm mt-1">{errors.country}</Text>}
+            <FormField
+              title={t("confirm_password")}
+              placeholder="Confirm Password"
+              value={form.cpassword}
+              handleChangeText={(e) => setForm({ ...form, cpassword: e })}
+              otherStyles="mt-2"
+              variant="auth"
+              secureTextEntry
+            />
+            {errors.cpassword && <Text className="text-red-400 text-sm mt-1">{errors.cpassword}</Text>}
 
-          <CustomSelectField
-            title={t("select_language")}
-            selectedValue={selectedLanguage}
-            options={filteredLanguages}
-            handleValueChange={handleLanguageSelect}
-            otherStyles="mt-2"
-          />
-          {errors.language && <Text className="text-red-400 text-sm mt-1">{errors.language}</Text>}
+            <CustomSelectField
+              title={t("select_country")}
+              selectedValue={selectedCountry}
+              options={countries}
+              handleValueChange={setSelectedCountry}
+              otherStyles="mt-2"
+              variant="auth"
+            />
+            {errors.country && <Text className="text-red-400 text-sm mt-1">{errors.country}</Text>}
 
+            <CustomSelectField
+              title={t("select_language")}
+              selectedValue={selectedLanguage}
+              options={filteredLanguages}
+              handleValueChange={handleLanguageSelect}
+              otherStyles="mt-2"
+              variant="auth"
+            />
+            {errors.language && <Text className="text-red-400 text-sm mt-1">{errors.language}</Text>}
+
+            <CustomButton
+              title={t("buttons.sign_up")}
+              handlePress={submit}
+              containerStyles="w-full"
+              isLoading={isSubmitting}
+            />
+          </View>
+
+          <View className="flex-row justify-center items-center pt-6 gap-2">
+            <Text className="text-sm text-[#CFCBFF] font-pregular">Already have an account?</Text>
+            <Link href="/sign-in" className="text-sm font-psemibold text-[#E1CE67]">
+              Sign in
+            </Link>
+          </View>
         </View>
       </KeyboardAwareScrollView>
-      <CustomButton
-        title={t("buttons.sign_up")}
-        handlePress={submit}
-        containerStyles="w-full"
-        isLoading={isSubmitting}
-      />
-
-      <View className="flex justify-center pt-5 flex-row gap-2">
-        <Text className="text-lg text-gray-100 font-pregular">
-          Have an account already?
-        </Text>
-        <Link
-          href="/sign-in"
-          className="text-lg font-secondary text-secondary"
-        >
-          Sign In
-        </Link>
-      </View>
     </SafeAreaView>
   );
 };

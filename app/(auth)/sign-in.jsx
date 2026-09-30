@@ -5,7 +5,6 @@ import {
   View,
   Text,
   ScrollView,
-  Dimensions,
   Alert,
   TouchableOpacity,
   ActivityIndicator,
@@ -120,106 +119,101 @@ const SignIn = () => {
   const { t } = useTranslation();
 
   return (
-    <SafeAreaView className="bg-[#171342] h-full">
-      <ScrollView>
-        <View
-          className="w-full flex justify-center h-full px-4 my-6"
-          style={{
-            minHeight: Dimensions.get("window").height - 100,
-          }}
-        >
-          <View className="mb-8 mt-4">
-            <Text className="text-white text-[38px] font-pbold tracking-tight">9tel</Text>
-            <Text className="text-[#CFCBFF] text-base font-pregular mt-1">Simple, secure and always connected.</Text>
-          </View>
-
-          <Text className="text-white text-2xl font-psemibold">Welcome back</Text>
-          <Text className="text-[#CFCBFF] text-sm font-pregular mt-1">Sign in to manage your account.</Text>
-
-          <FormField
-            title={t("email")}
-            value={form.email}
-            placeholder="e.g. yourname@gmail.com"
-            handleChangeText={(e) => setForm({ ...form, email: e })}
-            otherStyles="mt-8"
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            autoComplete="email"
-            textContentType="emailAddress"
-            maxLength={60}
-          />
-
-          <FormField
-            title={t("password")}
-            placeholder="Password"
-            value={form.password}
-            handleChangeText={(e) => setForm({ ...form, password: e })}
-            otherStyles="mt-5"
-            autoCapitalize="none"
-            autoCorrect={false}
-            textContentType="password"
-            maxLength={64}
-            secureTextEntry
-          />
-
-          <CustomButton
-            title={t("buttons.sign_in")}
-            handlePress={submit}
-            containerStyles="w-full"
-            isLoading={isSubmitting}
-          />
-
-          {/* Forgot password — directly under Sign In */}
-          <View className="flex justify-end pt-3 flex-row">
-            <Link
-              href="/forgot-password"
-              className="text-base text-gray-100 font-secondary"
-            >
-              Forgot password?
-            </Link>
-          </View>
-
-          {/* Divider */}
-          <View className="flex-row items-center my-4">
-            <View className="flex-1 h-[1px] bg-white/30" />
-            <Text className="text-white/70 mx-3 font-pregular">or</Text>
-            <View className="flex-1 h-[1px] bg-white/30" />
-          </View>
-
-          {/* Guest sign-in — Google-style white button */}
-          <TouchableOpacity
-            onPress={submitAnonymous}
-            disabled={isAnonSubmitting}
-            activeOpacity={0.8}
-            className={`w-full bg-white rounded-xl min-h-[52px] flex-row justify-center items-center shadow-lg shadow-black/40 ${
-              isAnonSubmitting ? "opacity-60" : ""
-            }`}
-          >
-            {isAnonSubmitting ? (
-              <ActivityIndicator color="#3c4043" />
-            ) : (
-              <>
-                <UserRound size={22} color="#4285F4" />
-                <Text className="text-[#3c4043] font-psemibold text-base ml-3">
-                  Continue as Guest
-                </Text>
-              </>
-            )}
-          </TouchableOpacity>
-
-          <View className="flex justify-center pt-6 flex-row gap-2">
-            <Text className="text-lg text-gray-100 font-pregular">
-              Don't have an account?
+    <SafeAreaView className="flex-1 bg-[#171342]">
+      <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+        <View className="flex-1 justify-center px-5 py-8">
+          <View className="mb-9">
+            <View className="flex-row items-center mb-8">
+              <View className="w-12 h-12 rounded-2xl bg-[#FCC200] items-center justify-center">
+                <Text className="text-[#211B59] text-2xl font-pbold">9</Text>
+              </View>
+              <View className="ml-3">
+                <Text className="text-white text-2xl font-pbold tracking-tight">9tel</Text>
+                <Text className="text-[#CFCBFF] text-xs font-pregular">SIMPLE. SECURE. CONNECTED.</Text>
+              </View>
+            </View>
+            <Text className="text-white text-[30px] leading-9 font-psemibold">Welcome back</Text>
+            <Text className="text-[#CFCBFF] text-sm font-pregular mt-2">
+              Sign in to stay close to the people who matter.
             </Text>
-            <Link
-              href="/sign-up"
-              className="text-lg font-secondary text-secondary"
-            >
-              Sign Up
-            </Link>
           </View>
 
+          <View className="rounded-3xl border border-white/10 bg-[#211B59] p-5">
+            <FormField
+              title={t("email")}
+              value={form.email}
+              placeholder="e.g. yourname@gmail.com"
+              handleChangeText={(e) => setForm({ ...form, email: e })}
+              otherStyles="mt-1"
+              variant="auth"
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
+              maxLength={60}
+            />
+
+            <FormField
+              title={t("password")}
+              placeholder="Password"
+              value={form.password}
+              handleChangeText={(e) => setForm({ ...form, password: e })}
+              otherStyles="mt-5"
+              variant="auth"
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="password"
+              maxLength={64}
+              secureTextEntry
+            />
+
+            <View className="flex-row justify-end mt-3">
+              <Link href="/forgot-password" className="text-sm text-[#E1CE67] font-pmedium">
+                Forgot password?
+              </Link>
+            </View>
+
+            <CustomButton
+              title={t("buttons.sign_in")}
+              handlePress={submit}
+              containerStyles="w-full"
+              isLoading={isSubmitting}
+            />
+
+            <View className="flex-row items-center my-4">
+              <View className="flex-1 h-[1px] bg-white/15" />
+              <Text className="text-[#9C97C4] mx-3 font-pregular text-xs">OR</Text>
+              <View className="flex-1 h-[1px] bg-white/15" />
+            </View>
+
+            <TouchableOpacity
+              onPress={submitAnonymous}
+              disabled={isAnonSubmitting}
+              activeOpacity={0.8}
+              className={`w-full bg-[#302A68] border border-white/15 rounded-xl min-h-[52px] flex-row justify-center items-center ${
+                isAnonSubmitting ? "opacity-60" : ""
+              }`}
+            >
+              {isAnonSubmitting ? (
+                <ActivityIndicator color="#CFCBFF" />
+              ) : (
+                <>
+                  <UserRound size={20} color="#E1CE67" />
+                  <Text className="text-white font-pmedium text-sm ml-3">
+                    Continue as Guest
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </View>
+
+          <View className="flex-row justify-center items-center pt-7 gap-2">
+            <Text className="text-sm text-[#CFCBFF] font-pregular">New to 9tel?</Text>
+            <Link href="/sign-up" className="text-sm font-psemibold text-[#E1CE67]">
+              Create an account
+            </Link>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>

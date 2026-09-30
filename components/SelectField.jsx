@@ -90,10 +90,11 @@ const SelectField = ({ title, options, selectedValue, handleValueChange, otherSt
 
 export default SelectField;
 
-export const CustomSelectField = ({ title, options, selectedValue, handleValueChange, otherStyles }) => {
+export const CustomSelectField = ({ title, options, selectedValue, handleValueChange, otherStyles, variant = 'default' }) => {
     const [searchText, setSearchText] = useState('');
     const [filteredOptions, setFilteredOptions] = useState(options);
     const [modalVisible, setModalVisible] = useState(false); // State to control modal visibility
+    const isAuth = variant === 'auth';
 
     // Keep the list in sync when options arrive/refresh after mount
     useEffect(() => {
@@ -110,12 +111,16 @@ export const CustomSelectField = ({ title, options, selectedValue, handleValueCh
 
     return (
         <View className={`gap-y-2 ${otherStyles}`}>
-            <Text className="text-base text-gray-100 font-pmedium">{title}</Text>
+            <Text className={`text-sm font-pmedium ${isAuth ? 'text-[#D8D5F0]' : 'text-gray-100'}`}>{title}</Text>
 
             {/* Touchable area for triggering Modal */}
             <TouchableOpacity
                 onPress={() => setModalVisible(true)}
-                className="w-full px-4 py-2 rounded-2xl border-2 border-dotted border-secondary flex-row justify-between items-center"
+                className={`w-full h-14 px-4 rounded-xl flex-row justify-between items-center ${
+                    isAuth
+                        ? 'bg-[#302A68] border border-white/15'
+                        : 'py-2 rounded-2xl border-2 border-dotted border-secondary'
+                }`}
             >
                 <Text className="text-white font-psemibold text-base">
                     {selectedValue
@@ -123,7 +128,7 @@ export const CustomSelectField = ({ title, options, selectedValue, handleValueCh
                           selectedValue.charAt(0).toUpperCase() + selectedValue.slice(1)
                         : "Select an option"}
                 </Text>
-                <ArrowDown size={35} color="#ffffff" />
+                <ArrowDown size={24} color={isAuth ? "#CFCBFF" : "#ffffff"} />
             </TouchableOpacity>
 
             {/* Modal for displaying the dropdown */}
@@ -134,12 +139,12 @@ export const CustomSelectField = ({ title, options, selectedValue, handleValueCh
                 onRequestClose={() => setModalVisible(false)}
             >
                 <View className="flex-1 justify-center items-center bg-white/20 bg-opacity-5">
-                    <View className="w-4/5 bg-gray-600 p-4 rounded-lg">
+                    <View className={`w-4/5 p-4 rounded-2xl ${isAuth ? 'bg-[#211B59] border border-white/15' : 'bg-gray-600'}`}>
                         {/* Search Input */}
                         <TextInput
                             className="w-full text-white font-psemibold text-base mb-2"
                             placeholder="Search..."
-                            placeholderTextColor="#ffffff"
+                            placeholderTextColor={isAuth ? "#9C97C4" : "#ffffff"}
                             value={searchText}
                             onChangeText={handleSearch}
                         />
@@ -164,7 +169,7 @@ export const CustomSelectField = ({ title, options, selectedValue, handleValueCh
                         {/* Close Button */}
                         <TouchableOpacity
                             onPress={() => setModalVisible(false)}
-                            className="mt-4 bg-red-500 px-4 py-2 rounded-full"
+                            className={`mt-4 px-4 py-2 rounded-full ${isAuth ? 'bg-[#5147AF]' : 'bg-red-500'}`}
                         >
                             <Text className="text-white text-center">Close</Text>
                         </TouchableOpacity>
@@ -174,4 +179,3 @@ export const CustomSelectField = ({ title, options, selectedValue, handleValueCh
         </View>
     );
 };
-

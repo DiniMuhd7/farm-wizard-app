@@ -31,12 +31,17 @@ export default function VerifyPhone() {
     pollRef.current = setInterval(async () => {
       if (Date.now() > pollDeadlineRef.current) {
         clearInterval(pollRef.current);
+        pollRef.current = null;
+        setError("We couldn't confirm your number yet. Check that you answered the call and entered the code, then try again.");
+        setCalling(false);
+        setValidationCode("");
         return;
       }
       try {
         const verified = await getVerifiedCallerId();
         if (verified && verified === expectedNumber) {
           clearInterval(pollRef.current);
+          pollRef.current = null;
           router.replace("/(tabs)/home");
         }
       } catch {
@@ -93,7 +98,7 @@ export default function VerifyPhone() {
                 otherStyles="mt-2"
                 keyboardType="phone-pad"
               />
-              {!!error && <Text className="text-red-400 text-sm mt-1">{error}</Text>}
+              {!!error && <Text className="text-[#F5B199] text-xs mt-2">{error}</Text>}
 
               <CustomButton
                 title="Call me to verify"

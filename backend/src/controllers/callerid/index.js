@@ -3,6 +3,25 @@ const { twilioRequestIsValid } = require("../../utils/twilioSignature");
 
 const E164 = /^\+[1-9]\d{6,14}$/;
 
+function verificationErrorMessage(error) {
+  if (/Caller ID verification is not configured/.test(error.message || "")) {
+    return "Caller ID verification is not configured yet. Please contact support.";
+  }
+
+  switch (String(error.code)) {
+    case "20003":
+      return "Caller ID verification is temporarily unavailable. Please contact support.";
+    case "21211":
+      return "Twilio could not call this number. Check the number and country code, then try again.";
+    case "21408":
+      return "Calling this country is not enabled for verification. Please contact support.";
+    case "20429":
+      return "Too many verification attempts. Wait a few minutes before trying again.";
+    default:
+      return "We couldn't start verification. Please try again later.";
+  }
+}
+
 // IMPORTANT, read before changing this file: Twilio only allows a
 // non-Twilio-owned number to be used as an outbound caller ID after it has
 // gone through Twilio's OWN Outgoing Caller ID verification — and that
@@ -55,8 +74,19 @@ exports.startVerification = async (req, res) => {
       validationCode: validationRequest.validationCode,
     });
   } catch (error) {
-    console.error("Unable to start caller ID verification:", error.message);
-    return res.status(503).json({ message: "Unable to start verification right now. Please try again later." });
+    console.error("Unable to start caller ID verification:", {
+      code: error.code || null,
+      status: error.status || null,
+      configured: {
+        accountSid: Boolean(process.env.TWILIO_ACCOUNT_SID),
+        authToken: Boolean(process.env.TWILIO_AUTH_TOKEN),
+        publicBaseUrl: Boolean(process.env.PUBLIC_BASE_URL),
+      },
+    });
+    return res.status(503).json({
+      message: verificationErrorMessage(error),
+      code: error.code || undefined,
+    });
   }
 };
 
@@ -75,7 +105,13 @@ exports.getVerificationStatus = async (req, res) => {
 // voice webhooks, plus the userId this request was addressed to (see
 // startVerification's callbackUrl above).
 exports.verificationCallback = async (req, res) => {
-  if (!twilioRequestIsValid(req)) return res.status(403).type("text/plain").send("Invalid Twilio signature");
+  if (!twilioRequestIsValid(req)) {
+    console.warn("Rejected Twilio caller ID callback: signature validation failed", {
+      hasAuthToken: Boolean(process.env.TWILIO_AUTH_TOKEN),
+      hasPublicBaseUrl: Boolean(process.env.PUBLIC_BASE_URL),
+    });
+    return res.status(403).type("text/plain").send("Invalid Twilio signature");
+  }
   const userId = String(req.query?.userId || "");
   const phoneNumber = String(req.body?.PhoneNumber || "").trim();
   const status = String(req.body?.VerificationStatus || "");
@@ -85,7 +121,14 @@ exports.verificationCallback = async (req, res) => {
       await User.findByIdAndUpdate(userId, { verifiedCallerId: phoneNumber });
     } catch (error) {
       console.error("Unable to save verified caller ID:", error.message);
+      return res.status(500).type("text/plain").send("Unable to save verification");
     }
+  } else {
+    console.warn("Twilio caller ID callback did not confirm verification", {
+      hasUserId: Boolean(userId),
+      hasPhoneNumber: Boolean(phoneNumber),
+      status,
+    });
   }
   return res.status(200).type("text/plain").send("OK");
 };

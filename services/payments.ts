@@ -12,6 +12,21 @@ export type AvailabilityResult =
   | { alreadyProvisioned: false; available: true; phoneNumber: string; countryCode: string }
   | { alreadyProvisioned: false; available: false; message: string };
 
+export async function getAvailableNumberCountries(countries: { value: string }[]): Promise<string[]> {
+  const countryCodes = [...new Set(
+    countries
+      .map((country) => country.value.toUpperCase())
+      .filter((code) => /^[A-Z]{2}$/.test(code)),
+  )];
+  const response = await fetch(
+    `${API_BASE}/api/v1/numbers/available-countries?countryCodes=${encodeURIComponent(countryCodes.join(","))}`,
+    { headers: await authHeader() },
+  );
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.message || "Unable to load available countries right now.");
+  return data.countryCodes ?? [];
+}
+
 // A free preview of what number you'd get — nothing is purchased by
 // calling this. Twilio doesn't let you reserve a specific number ahead of
 // paying for it, so the exact number shown could in rare cases be taken by

@@ -36,6 +36,7 @@ export default function Settings() {
   // just stays US) — previously this was never anything BUT "US", for
   // every user regardless of where they actually are.
   const [selectedCountry, setSelectedCountry] = useState<{ label: string; value: string }>({ label: "United States", value: "us" });
+  const selectedCountryRef = useRef(selectedCountry.value);
 
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [availabilityError, setAvailabilityError] = useState("");
@@ -79,6 +80,10 @@ export default function Settings() {
   }, [availableCountries, countrySearch]);
 
   useEffect(() => {
+    selectedCountryRef.current = selectedCountry.value;
+  }, [selectedCountry.value]);
+
+  useEffect(() => {
     if (!modalOpen || !countries.length) return;
     let cancelled = false;
     setLoadingAvailableCountries(true);
@@ -92,7 +97,7 @@ export default function Settings() {
         setAvailableCountries(available);
         if (
           available.length &&
-          !available.some((country) => country.value.toLowerCase() === selectedCountry.value.toLowerCase())
+          !available.some((country) => country.value.toLowerCase() === selectedCountryRef.current.toLowerCase())
         ) {
           setSelectedCountry(
             available.find((country) => country.value.toLowerCase() === preferredCountryCode) || available[0],

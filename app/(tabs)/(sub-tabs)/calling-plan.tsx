@@ -1,7 +1,11 @@
+import { useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Check, ChevronLeft, Clock3, Globe2, PhoneCall, ShieldCheck, Sparkles, UserRoundCheck } from "lucide-react-native";
 import { router } from "expo-router";
+import { useLoginContext } from "@/context/LoginProvider";
+import CallingPlanTiers from "@/components/CallingPlanTiers";
+import { getCallingPlansForCountry } from "@/constants/callingPlans";
 
 const benefits = [
   { title: "Choose your 9tel number", detail: "Pick from countries where numbers are currently available.", Icon: Globe2 },
@@ -11,6 +15,12 @@ const benefits = [
 ];
 
 export default function CallingPlan() {
+  const { user } = useLoginContext();
+  const regionalPlans = useMemo(() => getCallingPlansForCountry(user?.country), [user?.country]);
+  const [selectedTierId, setSelectedTierId] = useState<string | null>(
+    () => regionalPlans?.tiers.find((tier) => tier.popular)?.id ?? regionalPlans?.tiers[0]?.id ?? null,
+  );
+
   return (
     <SafeAreaView style={s.safe} edges={["top"]}>
       <ScrollView contentContainerStyle={s.page} showsVerticalScrollIndicator={false}>
@@ -48,6 +58,15 @@ export default function CallingPlan() {
           <ShieldCheck size={19} color="#5147AF" />
           <Text style={s.noteText}>You’ll see the number’s price and payment details before confirming. Card details are not stored in the app.</Text>
         </View>
+
+        {regionalPlans && (
+          <CallingPlanTiers
+            plans={regionalPlans}
+            selectedTierId={selectedTierId}
+            onSelect={setSelectedTierId}
+          />
+        )}
+
         <Pressable style={s.primary} onPress={() => router.push("/(tabs)/(sub-tabs)/settings")}>
           <PhoneCall size={18} color="#FFF" /><Text style={s.primaryText}>Set up your number</Text>
         </Pressable>

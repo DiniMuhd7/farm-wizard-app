@@ -16,6 +16,7 @@ const ResetPassword = () => {
     });
     const [errors, setErrors] = useState({});
     const { email, code } = useLocalSearchParams();
+    const { t } = useTranslation();
 
     useEffect(() => {
         if (!email || !code) {
@@ -56,7 +57,6 @@ const ResetPassword = () => {
         }
     };
 
-    const { t } = useTranslation();
     return (
         <SafeAreaView className="bg-primary h-full" style={{ backgroundColor: "#211B59" }}>
             <ScrollView>

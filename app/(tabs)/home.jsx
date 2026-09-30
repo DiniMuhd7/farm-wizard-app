@@ -15,8 +15,9 @@ function isMissedCall(call) {
 }
 
 function displayCallNumber(counterparty) {
-  const clientMatch = counterparty.match(/^client:user-(.+)$/);
-  return clientMatch ? `9tel user ${clientMatch[1].slice(0, 6)}` : counterparty;
+  const number = String(counterparty ?? "");
+  const clientMatch = number.match(/^client:user-(.+)$/);
+  return clientMatch ? `9tel user ${clientMatch[1].slice(0, 6)}` : number;
 }
 
 const keys = [
@@ -82,37 +83,32 @@ export default function DialPad() {
   const digits = useMemo(() => number.replace(/\D/g, ""), [number]);
   const soundsRef = useRef({});
 
-  useFocusEffect(
-    useCallback(() => {
-      let active = true;
-      const loadCallNotifications = async () => {
-        try {
-          const [records, lastReadAt] = await Promise.all([
-            getCallHistory(),
-            AsyncStorage.getItem(CALLS_READ_AT_KEY),
-          ]);
-          if (!active) return;
-          setCallNotifications(records.slice(0, 10));
-          setNotificationsFailed(false);
-          if (lastReadAt) {
-            const readTimestamp = new Date(lastReadAt).getTime();
-            setUnreadMissedCalls(records.filter(
-              (call) => isMissedCall(call) && new Date(call.at).getTime() > readTimestamp
-            ).length);
-          } else {
-            setUnreadMissedCalls(0);
-          }
-        } catch {
-          if (!active) return;
-          setCallNotifications([]);
-          setNotificationsFailed(true);
-          setUnreadMissedCalls(0);
-        }
-      };
-      loadCallNotifications();
-      return () => { active = false; };
-    }, [])
-  );
+  const loadCallNotifications = useCallback(async () => {
+    try {
+      const [records, lastReadAt] = await Promise.all([
+        getCallHistory(),
+        AsyncStorage.getItem(CALLS_READ_AT_KEY),
+      ]);
+      setCallNotifications(records.slice(0, 10));
+      setNotificationsFailed(false);
+      if (lastReadAt) {
+        const readTimestamp = new Date(lastReadAt).getTime();
+        setUnreadMissedCalls(records.filter(
+          (call) => isMissedCall(call) && new Date(call.at).getTime() > readTimestamp
+        ).length);
+      } else {
+        setUnreadMissedCalls(0);
+      }
+    } catch {
+      setCallNotifications([]);
+      setNotificationsFailed(true);
+      setUnreadMissedCalls(0);
+    }
+  }, []);
+
+  useFocusEffect(useCallback(() => {
+    loadCallNotifications();
+  }, [loadCallNotifications]));
 
   useEffect(() => {
     // country_name and country_calling_code both come from the same ipapi
@@ -253,10 +249,11 @@ export default function DialPad() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={unreadMissedCalls ? `${unreadMissedCalls} new missed calls` : "Call notifications"}
-            onPress={() => {
+            onPress={async () => {
               setNotificationsVisible(true);
               setUnreadMissedCalls(0);
-              AsyncStorage.setItem(CALLS_READ_AT_KEY, new Date().toISOString()).catch(() => undefined);
+              await AsyncStorage.setItem(CALLS_READ_AT_KEY, new Date().toISOString()).catch(() => undefined);
+              await loadCallNotifications();
             }}
             style={styles.iconButton}
           >

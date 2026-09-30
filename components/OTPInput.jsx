@@ -149,7 +149,7 @@ const OTPInput = ({ onSubmit, email }) => {
                         onKeyPress={e => handleKeyPress(e, index)}
                         onFocus={handlePasteFromClipboard}
                         selectionColor="#5147AF"
-                        textContentType={index === 0 ? "oneTimeCode" : "none"}
+                        textContentType={index === 0 ? "oneTimeCode" : undefined}
                     />
                 ))}
             </View>
@@ -186,7 +186,7 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#E6E4F0',
         borderRadius: 13,
-        width: 42,
+        width: 39,
         height: 54,
         marginHorizontal: 4,
         textAlign: 'center',

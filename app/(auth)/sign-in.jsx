@@ -160,6 +160,7 @@ const SignIn = () => {
             autoCorrect={false}
             textContentType="password"
             maxLength={64}
+            secureTextEntry
           />
 
           <CustomButton

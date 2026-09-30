@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, router, useLocalSearchParams } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { View, Text, ScrollView, Dimensions, Alert } from "react-native";
@@ -16,10 +16,15 @@ const ResetPassword = () => {
     });
     const [errors, setErrors] = useState({});
     const { email, code } = useLocalSearchParams();
-    if (!email || !code) {
-        Alert.alert('Error', 'Email or code Is missing')
-        router.replace("/(auth)/sign-in")
-    }
+
+    useEffect(() => {
+        if (!email || !code) {
+            Alert.alert('Error', 'Email or code Is missing');
+            router.replace("/(auth)/sign-in");
+        }
+    }, [email, code]);
+
+    if (!email || !code) return null;
 
     const submit = async () => {
         const { isValid, errors: validationErrors } = validateForm({
@@ -75,6 +80,7 @@ const ResetPassword = () => {
                         value={form.password}
                         handleChangeText={(e) => setForm({ ...form, password: e })}
                         otherStyles="mt-2"
+                        secureTextEntry
                     />
                     {errors.password && <Text className="text-red-400 text-sm mt-1">{errors.password}</Text>}
 
@@ -84,6 +90,7 @@ const ResetPassword = () => {
                         value={form.cpassword}
                         handleChangeText={(e) => setForm({ ...form, cpassword: e })}
                         otherStyles="mt-2"
+                        secureTextEntry
                     />
                     {errors.cpassword && <Text className="text-red-400 text-sm mt-1">{errors.cpassword}</Text>}
 

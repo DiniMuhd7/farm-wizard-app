@@ -5,6 +5,7 @@ import { ChevronRight, Crown, HelpCircle, PhoneCall, Settings, ShieldCheck, User
 import { router } from "expo-router";
 import { useLoginContext } from "@/context/LoginProvider";
 import { getMyNumber } from "@/services/numbers";
+import { signOut } from "@/services/auth";
 
 const items = [
   { label: "Account details", detail: "Manage your personal information", icon: UserRound, color: "#E5E0FF", route: "/(tabs)/(sub-tabs)/editProfile" },
@@ -14,7 +15,8 @@ const items = [
 ];
 
 export default function Profile() {
-  const { user } = useLoginContext();
+  const { user, setUser, setIsLogged } = useLoginContext();
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const name = user?.fullName || "Guest";
   const initials = name.split(" ").map((word: string) => word[0]).join("").slice(0, 2);
 
@@ -29,6 +31,26 @@ export default function Profile() {
       .then(setMyNumber)
       .catch(() => setMyNumber(null));
   }, []);
+
+  const handleSignOut = () => {
+    Alert.alert("Sign out", "Are you sure you want to sign out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign out",
+        style: "destructive",
+        onPress: async () => {
+          setIsSigningOut(true);
+          try {
+            await signOut();
+          } finally {
+            setUser(null);
+            setIsLogged(false);
+            router.replace("/(auth)/sign-in");
+          }
+        },
+      },
+    ]);
+  };
 
   return (
     <SafeAreaView style={s.safe} edges={["top"]}>
@@ -96,7 +118,7 @@ export default function Profile() {
           ))}
         </View>
 
-        <Pressable style={s.signOut} onPress={() => Alert.alert("Sign out", "Your account is safely saved.")}>
+        <Pressable style={s.signOut} onPress={handleSignOut} disabled={isSigningOut}>
           <Text style={s.signOutText}>Sign out</Text>
         </Pressable>
       </ScrollView>

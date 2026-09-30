@@ -142,6 +142,7 @@ const EditProfile = () => {
             value={form.password}
             handleChangeText={(e: any) => setForm({ ...form, password: e })}
             otherStyles="mt-2"
+            secureTextEntry
           />
           {errors.password && (
             <Text className="text-red-400 text-sm mt-1">{errors.password}</Text>
@@ -153,6 +154,7 @@ const EditProfile = () => {
             value={form.cpassword}
             handleChangeText={(e: any) => setForm({ ...form, cpassword: e })}
             otherStyles="mt-4"
+            secureTextEntry
           />
           {errors.cpassword && (
             <Text className="text-red-400 text-sm mt-1">

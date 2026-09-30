@@ -92,16 +92,14 @@ export const signOut = async () => {
     const token = await AsyncStorage.getItem("token");
     if (token !== null) {
       // Best-effort server sign-out; don't block local logout on it.
-      try {
-        await client.get("/auth/sign-out", {
+      void Promise.resolve()
+        .then(() => client.get("/auth/sign-out", {
           headers: {
             Authorization: `JWT ${token}`,
             "Content-Type": "application/json",
           },
-        });
-      } catch (e) {
-        // server unreachable — still clear the local session below
-      }
+        }))
+        .catch(() => {});
     }
     // Always clear the local session so logout works even when offline.
     await AsyncStorage.removeItem("token");

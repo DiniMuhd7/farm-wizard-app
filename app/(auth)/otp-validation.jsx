@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Alert, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import OTPInput from "../../components/OTPInput";
@@ -8,10 +8,15 @@ const OTPValidation = () => {
     const [isSubmitting, setSubmitting] = useState(false);
     const { email } = useLocalSearchParams();
 
-    if (!email) {
-        Alert.alert('Error', 'Email Is missing')
-        router.replace("/(auth)/sign-in")
-    }
+    useEffect(() => {
+        if (!email) {
+            Alert.alert('Error', 'Email Is missing');
+            router.replace("/(auth)/sign-in");
+        }
+    }, [email]);
+
+    if (!email) return null;
+
     const handleOTPSubmit = async (code) => {
         try {
             const res = await verifyOTP(email, code);

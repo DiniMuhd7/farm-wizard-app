@@ -151,6 +151,7 @@ const SignUp = () => {
             value={form.password}
             handleChangeText={(e) => setForm({ ...form, password: e })}
             otherStyles="mt-2"
+            secureTextEntry
           />
           {errors.password && <Text className="text-red-400 text-sm mt-1">{errors.password}</Text>}
 
@@ -160,6 +161,7 @@ const SignUp = () => {
             value={form.cpassword}
             handleChangeText={(e) => setForm({ ...form, cpassword: e })}
             otherStyles="mt-2"
+            secureTextEntry
           />
           {errors.cpassword && <Text className="text-red-400 text-sm mt-1">{errors.cpassword}</Text>}
 

@@ -49,7 +49,8 @@ export async function getAvailableNumberCountries(countries: { value: string }[]
 
   const data = await response.json().catch(() => null);
   if (!response.ok) {
-    throw new Error((data && typeof data.message === "string" && data.message) || "Unable to load available countries right now.");
+    const message = typeof data?.message === "string" ? data.message : "Unable to load available countries right now.";
+    throw new Error(message);
   }
   // The backend always returns { countryCodes: string[] } on success, but
   // guard against a malformed/unexpected payload shape (e.g. an upstream

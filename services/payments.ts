@@ -12,6 +12,24 @@ export type AvailabilityResult =
   | { alreadyProvisioned: false; available: true; phoneNumber: string; countryCode: string }
   | { alreadyProvisioned: false; available: false; message: string };
 
+// Lets callers (and tests) distinguish *why* loading countries failed —
+// "the provider isn't configured in this deployment" vs. "a generic/
+// transient provider error" vs. "network/timeout" — without resorting to
+// matching on message text. The UI still just reads `.message`, but this
+// keeps the door open for a different presentation per state later (e.g. a
+// support link for `service_unavailable`) without another round of
+// guesswork about what actually failed in production.
+export type AvailableCountriesErrorCode = "service_unavailable" | "provider_error" | "network" | "malformed_response";
+
+export class AvailableCountriesError extends Error {
+  code: AvailableCountriesErrorCode;
+  constructor(message: string, code: AvailableCountriesErrorCode) {
+    super(message);
+    this.name = "AvailableCountriesError";
+    this.code = code;
+  }
+}
+
 // 15s is generous for a request that fans out to ~195 per-country lookups
 // on the backend (see listAvailableCountries), but still bounded — without
 // this, a stalled connection left the picker's loading spinner spinning
@@ -40,24 +58,30 @@ export async function getAvailableNumberCountries(countries: { value: string }[]
     // TLS, etc.) both land here — surface one consistent, retryable
     // message rather than letting a raw TypeError reach the UI.
     if ((error as Error)?.name === "AbortError") {
-      throw new Error("Loading available countries timed out. Please try again.");
+      throw new AvailableCountriesError("Loading available countries timed out. Please try again.", "network");
     }
-    throw new Error("Unable to reach 9tel right now. Check your connection and try again.");
+    throw new AvailableCountriesError("Unable to reach 9tel right now. Check your connection and try again.", "network");
   } finally {
     clearTimeout(timeout);
   }
 
   const data = await response.json().catch(() => null);
   if (!response.ok) {
+    // The backend tags configuration failures (e.g. Twilio credentials not
+    // set in this deployment) with code "service_unavailable" so the app
+    // can show that precise state instead of a misleading generic
+    // "Unable to load available countries" — see
+    // backend/src/controllers/numbers/index.js#listAvailableCountries.
+    const code: AvailableCountriesErrorCode = data?.code === "service_unavailable" ? "service_unavailable" : "provider_error";
     const message = typeof data?.message === "string" ? data.message : "Unable to load available countries right now.";
-    throw new Error(message);
+    throw new AvailableCountriesError(message, code);
   }
   // The backend always returns { countryCodes: string[] } on success, but
   // guard against a malformed/unexpected payload shape (e.g. an upstream
   // proxy error page, a truncated response) instead of silently returning
   // `[]` disguised as "no countries available".
   if (!data || !Array.isArray(data.countryCodes)) {
-    throw new Error("Unable to load available countries right now.");
+    throw new AvailableCountriesError("Unable to load available countries right now.", "malformed_response");
   }
   return data.countryCodes;
 }

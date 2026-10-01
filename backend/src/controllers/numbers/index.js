@@ -2,9 +2,20 @@ const User = require("../../models/User");
 
 // Shared by twilioClient() and purchaseAndAssignNumber() below so both
 // "missing config" errors stay in the same format instead of drifting apart.
+// `code: "CONFIG_MISSING"` lets callers (see listAvailableCountries below)
+// tell "the provider isn't configured in this environment" apart from "the
+// provider was reachable but returned an error/no inventory" — these used
+// to surface as the exact same generic 503, which made a genuinely missing
+// TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN in production indistinguishable from
+// a transient Twilio outage or simply no numbers being in stock right now.
 function requireEnv(keys) {
   const missing = keys.filter((key) => !process.env[key]);
-  if (missing.length) throw new Error(`Number provisioning is not configured: ${missing.join(", ")}`);
+  if (missing.length) {
+    const err = new Error(`Number provisioning is not configured: ${missing.join(", ")}`);
+    err.code = "CONFIG_MISSING";
+    err.missing = missing;
+    throw err;
+  }
 }
 
 // Lazily require the `twilio` REST client the same way services/voice.ts
@@ -66,6 +77,9 @@ exports.checkAvailability = async (req, res) => {
     return res.status(200).json({ available: true, phoneNumber: available[0].phoneNumber, countryCode });
   } catch (error) {
     console.error("Unable to check number availability:", error.message);
+    if (error.code === "CONFIG_MISSING") {
+      return res.status(503).json({ code: "service_unavailable", message: "9tel's number service isn't configured in this environment yet. Please try again later." });
+    }
     return res.status(error.status || 503).json({ message: error.status ? error.message : "Unable to check availability right now. Please try again later." });
   }
 };
@@ -137,8 +151,39 @@ exports.listAvailableCountries = async (req, res) => {
       code: error.code || null,
       status: error.status || null,
     });
-    return res.status(503).json({ message: "Unable to load available countries right now. Please try again." });
+    // Distinguish "the provider isn't configured in this environment" (e.g.
+    // TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN missing from the deployment) from
+    // a generic/transient provider error. Both used to collapse into the
+    // same "Unable to load available countries" message, which made a
+    // missing production config indistinguishable from "Twilio had a blip"
+    // or "no countries currently have numbers" — this `code` lets the app
+    // show a precise, non-misleading state instead of guessing.
+    if (error.code === "CONFIG_MISSING") {
+      return res.status(503).json({
+        code: "service_unavailable",
+        message: "9tel's number service isn't configured in this environment yet. Please try again later.",
+      });
+    }
+    return res.status(503).json({ code: "provider_error", message: "Unable to load available countries right now. Please try again." });
   }
+};
+
+// GET /api/v1/numbers/provider-status  (admin only)
+//
+// Health-safe diagnostic so an admin can tell, without reading server logs
+// or the deployment's environment variables directly, whether the number
+// provider (Twilio) is actually configured in this environment — i.e.
+// whether "Unable to load available countries" means "misconfigured
+// deployment" or something else. Only ever returns booleans, never the
+// credential values themselves.
+exports.getProviderStatus = async (req, res) => {
+  if (req.user?.userType !== "admin") {
+    return res.status(403).json({ message: "Admins only" });
+  }
+  return res.status(200).json({
+    numberProviderConfigured: Boolean(process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN),
+    purchaseWebhookConfigured: Boolean(process.env.PUBLIC_BASE_URL),
+  });
 };
 
 // Actually buys a number and assigns it to a user — called only after a

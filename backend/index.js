@@ -19,6 +19,21 @@ const { stripeWebhook } = require("./src/controllers/payments");
 
 const app = express();
 
+// Render (and most PaaS hosts) terminates TLS at a reverse proxy in front of
+// this process, so every request Express actually sees arrives from that
+// proxy's IP, with the real client IP only available via `X-Forwarded-For`.
+// Without telling Express to trust that one hop, `req.ip` resolves to the
+// proxy's own address for *every* request — collapsing the per-IP
+// `/api/v1/numbers/available-countries` rate limiter (see routes/numbers.js)
+// into a single shared bucket for the entire deployment instead of one per
+// user, so the whole app's traffic could exhaust it and start getting 429s
+// almost immediately. express-rate-limit also hard-warns
+// (ERR_ERL_UNEXPECTED_X_FORWARDED_FOR) whenever it sees `X-Forwarded-For`
+// with `trust proxy` left at its default `false`. `1` trusts exactly one
+// hop — the platform's own proxy — without trusting arbitrary
+// client-supplied `X-Forwarded-For` values (which `true` would).
+app.set("trust proxy", 1);
+
 // Stripe's webhook signature is computed over the exact raw request bytes —
 // if express.json() (below) parses and re-serializes the body first, the
 // bytes stripe.webhooks.constructEvent() sees will never byte-for-byte

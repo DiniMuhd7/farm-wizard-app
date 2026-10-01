@@ -1,11 +1,28 @@
 const User = require("../../models/User");
 
+// Shared by twilioClient() and purchaseAndAssignNumber() below so both
+// "missing config" errors stay in the same format instead of drifting apart.
+function requireEnv(keys) {
+  const missing = keys.filter((key) => !process.env[key]);
+  if (missing.length) throw new Error(`Number provisioning is not configured: ${missing.join(", ")}`);
+}
+
 // Lazily require the `twilio` REST client the same way services/voice.ts
 // lazy-loads the native Voice SDK on the mobile side.
+//
+// Only TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN are needed to construct this
+// client and look up number availability. PUBLIC_BASE_URL is unrelated to
+// that — it's only needed later, to build the voice webhook URL at actual
+// purchase time (see purchaseAndAssignNumber below). Previously it was
+// required here too, so an environment with valid Twilio credentials but a
+// missing/misconfigured PUBLIC_BASE_URL (e.g. the voice webhook base URL
+// not yet set, or set under a different name, in a given deployment) made
+// *every* availability lookup — and therefore the entire country picker —
+// fail with "Number provisioning is not configured", surfaced to the app
+// as the generic "Unable to load available countries" error, even though
+// nothing about listing available numbers was actually broken.
 function twilioClient() {
-  const required = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "PUBLIC_BASE_URL"];
-  const missing = required.filter((key) => !process.env[key]);
-  if (missing.length) throw new Error(`Number provisioning is not configured: ${missing.join(", ")}`);
+  requireEnv(["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]);
   const twilio = require("twilio");
   return twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 }
@@ -129,6 +146,10 @@ exports.listAvailableCountries = async (req, res) => {
 // Not exposed as its own public route: reaching this without paying would
 // defeat the entire point of the payment step in front of it.
 exports.purchaseAndAssignNumber = async (userId, countryCode) => {
+  // Only required here, where it's actually used (for the voice webhook
+  // URL below) — not in twilioClient() itself, see the comment there.
+  requireEnv(["PUBLIC_BASE_URL"]);
+
   const existing = await User.findById(userId).select("phoneNumber");
   if (existing?.phoneNumber) return existing.phoneNumber; // already has one — don't double-buy
 

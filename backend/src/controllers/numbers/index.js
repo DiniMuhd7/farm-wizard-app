@@ -179,3 +179,24 @@ exports.getMyNumber = async (req, res) => {
   const user = await User.findById(req.user._id).select("phoneNumber");
   return res.status(200).json({ phoneNumber: user?.phoneNumber || null });
 };
+
+const E164 = /^\+[1-9]\d{6,14}$/;
+
+// GET /api/v1/numbers/lookup?phoneNumber=+1555...
+//
+// Lets the app ask, before placing a call, "is this destination another
+// 9tel user (free/premium, in-app) or a local carrier (pay-as-you-go
+// credits)?" without duplicating the ownership lookup that
+// controllers/voice's outgoingCallTwiML already performs server-side at
+// dial time. This is the same `User.findOne({ phoneNumber })` check — kept
+// here, rather than guessed client-side from number formatting, because
+// phone number shape alone can't tell a 9tel-provisioned number apart from
+// an ordinary carrier number in the same country.
+exports.lookupNumber = async (req, res) => {
+  const phoneNumber = String(req.query?.phoneNumber || "").trim();
+  if (!E164.test(phoneNumber)) {
+    return res.status(400).json({ message: "phoneNumber must be a valid E.164 number, e.g. +15551234567." });
+  }
+  const owner = await User.findOne({ phoneNumber }).select("_id");
+  return res.status(200).json({ phoneNumber, is9telNumber: Boolean(owner) });
+};

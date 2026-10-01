@@ -15,6 +15,7 @@ const numbers = require("./src/routes/numbers");
 const calls = require("./src/routes/calls");
 const callerid = require("./src/routes/callerid");
 const payments = require("./src/routes/payments");
+const credits = require("./src/routes/credits");
 const { stripeWebhook } = require("./src/controllers/payments");
 
 const app = express();
@@ -86,6 +87,7 @@ app.use("/api/v1/numbers", numbers);
 app.use("/api/v1/calls", calls);
 app.use("/api/v1/callerid", callerid);
 app.use("/api/v1/payments", payments);
+app.use("/api/v1/credits", credits);
 
 // Start Server
 const PORT = process.env.PORT || 5000;

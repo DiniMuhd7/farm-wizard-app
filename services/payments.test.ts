@@ -4,7 +4,7 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   getItem: jest.fn(async () => "test-token"),
 }));
 
-import { getAvailableNumberCountries } from "./payments";
+import { AvailableCountriesError, getAvailableNumberCountries } from "./payments";
 
 const originalFetch = global.fetch;
 
@@ -38,6 +38,43 @@ describe("getAvailableNumberCountries", () => {
     await expect(getAvailableNumberCountries([{ value: "us" }])).rejects.toThrow(
       "Please wait before checking country availability again."
     );
+  });
+
+  it("surfaces a distinct service_unavailable code/message when the backend reports a missing provider configuration, instead of a generic failure", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      json: async () => ({
+        code: "service_unavailable",
+        message: "9tel's number service isn't configured in this environment yet. Please try again later.",
+      }),
+    })) as any;
+
+    let caught: unknown;
+    try {
+      await getAvailableNumberCountries([{ value: "us" }]);
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(AvailableCountriesError);
+    expect((caught as AvailableCountriesError).code).toBe("service_unavailable");
+    expect((caught as Error).message).toBe(
+      "9tel's number service isn't configured in this environment yet. Please try again later."
+    );
+  });
+
+  it("tags a generic non-OK response as provider_error, not service_unavailable", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: false,
+      json: async () => ({ message: "Unable to load available countries right now. Please try again." }),
+    })) as any;
+
+    let caught: unknown;
+    try {
+      await getAvailableNumberCountries([{ value: "us" }]);
+    } catch (error) {
+      caught = error;
+    }
+    expect((caught as AvailableCountriesError).code).toBe("provider_error");
   });
 
   it("falls back to a generic message when a non-OK response has no JSON body", async () => {

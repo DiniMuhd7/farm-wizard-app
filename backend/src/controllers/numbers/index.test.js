@@ -72,7 +72,7 @@ describe("numbers controller — Twilio configuration", () => {
     expect(res.body).toEqual({ available: true, phoneNumber: "+15555550123", countryCode: "US" });
   });
 
-  it("still requires TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN for availability lookups", async () => {
+  it("surfaces a distinct service_unavailable code when TWILIO_ACCOUNT_SID/TWILIO_AUTH_TOKEN are missing, instead of the generic provider-error message", async () => {
     delete process.env.TWILIO_ACCOUNT_SID;
     delete process.env.TWILIO_AUTH_TOKEN;
     const { listAvailableCountries } = require("./index");
@@ -80,7 +80,24 @@ describe("numbers controller — Twilio configuration", () => {
     const res = mockRes();
     await listAvailableCountries({ query: { countryCodes: "US" } }, res);
 
+    // Previously this collapsed into the same generic "Unable to load
+    // available countries right now" message as a transient Twilio error or
+    // "no numbers in stock", making a missing production config
+    // indistinguishable from either of those from the app's point of view.
     expect(res.statusCode).toBe(503);
+    expect(res.body.code).toBe("service_unavailable");
+    expect(res.body.message).toMatch(/isn't configured/i);
+  });
+
+  it("still returns the generic provider_error code for a non-config Twilio failure", async () => {
+    mockAvailabilityList.mockRejectedValue(Object.assign(new Error("boom"), { status: 500 }));
+    const { listAvailableCountries } = require("./index");
+
+    const res = mockRes();
+    await listAvailableCountries({ query: { countryCodes: "US" } }, res);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body.code).toBe("provider_error");
     expect(res.body.message).toMatch(/unable to load available countries/i);
   });
 
@@ -90,5 +107,38 @@ describe("numbers controller — Twilio configuration", () => {
     const { purchaseAndAssignNumber } = require("./index");
 
     await expect(purchaseAndAssignNumber("u1", "US")).rejects.toThrow(/PUBLIC_BASE_URL/);
+  });
+
+  describe("getProviderStatus", () => {
+    it("rejects non-admin users", async () => {
+      const { getProviderStatus } = require("./index");
+      const res = mockRes();
+
+      await getProviderStatus({ user: { userType: "user" } }, res);
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    it("reports whether the number provider is configured, without leaking credential values", async () => {
+      const { getProviderStatus } = require("./index");
+      const res = mockRes();
+
+      await getProviderStatus({ user: { userType: "admin" } }, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ numberProviderConfigured: true, purchaseWebhookConfigured: false });
+      expect(JSON.stringify(res.body)).not.toContain("token_test");
+    });
+
+    it("reports numberProviderConfigured: false when Twilio credentials are missing", async () => {
+      delete process.env.TWILIO_ACCOUNT_SID;
+      delete process.env.TWILIO_AUTH_TOKEN;
+      const { getProviderStatus } = require("./index");
+      const res = mockRes();
+
+      await getProviderStatus({ user: { userType: "admin" } }, res);
+
+      expect(res.body.numberProviderConfigured).toBe(false);
+    });
   });
 });

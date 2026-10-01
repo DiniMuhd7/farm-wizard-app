@@ -17,7 +17,7 @@ jest.mock("twilio", () => jest.fn(() => ({
   availablePhoneNumbers: () => ({ local: { list: mockAvailabilityList } }),
 })));
 
-jest.mock("../../models/User", () => ({}));
+jest.mock("../../models/User", () => ({ findById: jest.fn() }));
 
 const ORIGINAL_ENV = process.env;
 

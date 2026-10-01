@@ -1,5 +1,12 @@
 const User = require("../../models/User");
 
+// Shared by twilioClient() and purchaseAndAssignNumber() below so both
+// "missing config" errors stay in the same format instead of drifting apart.
+function requireEnv(keys) {
+  const missing = keys.filter((key) => !process.env[key]);
+  if (missing.length) throw new Error(`Number provisioning is not configured: ${missing.join(", ")}`);
+}
+
 // Lazily require the `twilio` REST client the same way services/voice.ts
 // lazy-loads the native Voice SDK on the mobile side.
 //
@@ -15,9 +22,7 @@ const User = require("../../models/User");
 // as the generic "Unable to load available countries" error, even though
 // nothing about listing available numbers was actually broken.
 function twilioClient() {
-  const required = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"];
-  const missing = required.filter((key) => !process.env[key]);
-  if (missing.length) throw new Error(`Number provisioning is not configured: ${missing.join(", ")}`);
+  requireEnv(["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN"]);
   const twilio = require("twilio");
   return twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 }
@@ -143,9 +148,7 @@ exports.listAvailableCountries = async (req, res) => {
 exports.purchaseAndAssignNumber = async (userId, countryCode) => {
   // Only required here, where it's actually used (for the voice webhook
   // URL below) — not in twilioClient() itself, see the comment there.
-  if (!process.env.PUBLIC_BASE_URL) {
-    throw new Error("Number provisioning is not configured: PUBLIC_BASE_URL");
-  }
+  requireEnv(["PUBLIC_BASE_URL"]);
 
   const existing = await User.findById(userId).select("phoneNumber");
   if (existing?.phoneNumber) return existing.phoneNumber; // already has one — don't double-buy

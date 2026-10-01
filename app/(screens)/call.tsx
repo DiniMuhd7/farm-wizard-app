@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Alert, Animated, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Animated, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Mic, MicOff, PhoneOff, Speaker, UserPlus, Volume2 } from "lucide-react-native";
 import { router, useLocalSearchParams } from "expo-router";
@@ -14,6 +14,11 @@ import {
   type CallStatus,
   type VoiceCall,
 } from "@/services/voice";
+import { useLoginContext } from "@/context/LoginProvider";
+import { classifyDestination } from "@/services/callEligibility";
+import { getCreditsBalance, hasSufficientCreditsForOneMinute } from "@/services/credits";
+import { resolveCallPlan, type ResolvedCallPlan } from "@/types/callPlans";
+import RewardedAdComponent from "@/utils/RewardedAdComponent";
 
 const STATUS_LABEL: Record<CallStatus, string> = {
   connecting: "Connecting…",
@@ -24,6 +29,28 @@ const STATUS_LABEL: Record<CallStatus, string> = {
   failed: "Call failed",
 };
 
+// The call screen's life cycle, gated by which plan (see
+// types/callPlans.ts) applies to this specific destination:
+//   resolving-plan     -> figuring out 9tel-vs-carrier + Premium status
+//   pre-call-ad        -> Free plan only: rewarded ad must complete before
+//                         the call is allowed to connect
+//   pre-call-ad-failed -> the ad was cancelled, failed to load, or errored
+//                         — call is blocked with a retry/skip-free choice,
+//                         never silently connected without the ad
+//   insufficient-credits -> Pay As You Go only: balance can't cover even
+//                         one billable minute — call is blocked with a
+//                         top-up CTA
+//   call               -> the actual call UI (unchanged from before)
+//   post-call-ad       -> Free plan only: shown after the call ends, before
+//                         leaving the screen
+type Phase =
+  | "resolving-plan"
+  | "pre-call-ad"
+  | "pre-call-ad-failed"
+  | "insufficient-credits"
+  | "call"
+  | "post-call-ad";
+
 export default function CallScreen() {
   // Keeps the screen from auto-locking for as long as this screen is
   // mounted, i.e. for the whole call — a locked screen on some devices
@@ -31,6 +58,7 @@ export default function CallScreen() {
   // `staysActiveInBackground` (services/voice.ts) can take over.
   useKeepAwake();
 
+  const { user } = useLoginContext();
   const { number = "+234 801 234 5678", video } = useLocalSearchParams<{ number: string; video: string }>();
   const displayNumber = Array.isArray(number) ? number[0] : number;
   const initial = displayNumber.replace(/[^a-z0-9]/gi, "").charAt(0).toUpperCase() || "?";
@@ -41,6 +69,10 @@ export default function CallScreen() {
   const pulse = useRef(new Animated.Value(1)).current;
   const callRef = useRef<VoiceCall | null>(null);
   const leftRef = useRef(false); // guards against navigating back twice
+  const planRef = useRef<ResolvedCallPlan>("unmetered");
+
+  const [phase, setPhase] = useState<Phase>("resolving-plan");
+  const rewardEarnedRef = useRef(false);
 
   const leaveScreen = () => {
     if (leftRef.current) return;
@@ -48,10 +80,55 @@ export default function CallScreen() {
     router.back();
   };
 
+  // Resolve which plan governs this specific call before doing anything
+  // else — 9tel-to-9tel calls are Free (ad-gated) or Premium (ad-free);
+  // 9tel-to-carrier calls are Pay As You Go (credits-gated); anything we
+  // can't positively classify fails open to "unmetered" (today's
+  // behavior) rather than guessing — see classifyDestination.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const { kind } = await classifyDestination(displayNumber);
+      if (cancelled) return;
+      const plan = resolveCallPlan(kind, user?.isPremium === true);
+      planRef.current = plan;
+
+      if (plan === "free") {
+        setPhase("pre-call-ad");
+        return;
+      }
+
+      if (plan === "payg") {
+        try {
+          const balance = await getCreditsBalance();
+          if (cancelled) return;
+          if (!hasSufficientCreditsForOneMinute(balance)) {
+            setPhase("insufficient-credits");
+            return;
+          }
+        } catch {
+          // Can't confirm the balance right now — fail open rather than
+          // blocking a call the person may well be able to pay for; the
+          // authoritative check still happens backend-side when the call
+          // actually completes (see backend's debitForCompletedCall).
+        }
+      }
+
+      setPhase("call");
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [displayNumber, user?.isPremium]);
+
   // Attach to the real call — either one already active (this screen was
   // opened after accepting an incoming call) or a fresh outgoing one — and
   // drive `status` off the SDK's actual lifecycle instead of a fake timer.
+  // Only starts once the plan/ad-gate/credits checks above have cleared.
   useEffect(() => {
+    if (phase !== "call") return;
     let unsubscribe: (() => void) | null = null;
     let cancelled = false;
 
@@ -60,7 +137,16 @@ export default function CallScreen() {
       callRef.current = call;
       unsubscribe = subscribeToCallStatus(call, (next) => {
         setStatus(next);
-        if (next === "disconnected" || next === "failed") leaveScreen();
+        if (next === "disconnected" || next === "failed") {
+          // Free plan: show the post-call ad/reward experience before
+          // actually leaving the screen. Premium/PAYG/unmetered calls
+          // leave immediately, same as before this feature existed.
+          if (planRef.current === "free") {
+            setPhase("post-call-ad");
+          } else {
+            leaveScreen();
+          }
+        }
       });
     };
 
@@ -80,7 +166,7 @@ export default function CallScreen() {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [displayNumber]);
+  }, [displayNumber, phase]);
 
   // Pulse animation runs the whole time the screen is open, independent of
   // call state — purely decorative.
@@ -125,6 +211,106 @@ export default function CallScreen() {
     const applied = await setSpeakerphoneEnabled(!speakerOn);
     if (applied) setSpeakerOn(!speakerOn);
   };
+
+  if (phase === "resolving-plan") {
+    return (
+      <SafeAreaView style={s.safe}>
+        <View style={s.gatePage}>
+          <ActivityIndicator color="#FFF" size="large" />
+          <Text style={s.gateTitle}>Preparing your call…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (phase === "pre-call-ad" || phase === "pre-call-ad-failed") {
+    return (
+      <SafeAreaView style={s.safe}>
+        <View style={s.gatePage}>
+          {phase === "pre-call-ad" && (
+            <RewardedAdComponent
+              onRewardEarned={() => {
+                rewardEarnedRef.current = true;
+              }}
+              onClose={() => {
+                // The ad component fires onClose both when a reward was
+                // actually earned (normal completion) and when the ad
+                // failed/errored before completion — these must not be
+                // treated the same way: a call must never connect off the
+                // back of a cancelled or unavailable ad.
+                setPhase(rewardEarnedRef.current ? "call" : "pre-call-ad-failed");
+              }}
+            />
+          )}
+          <ActivityIndicator color="#FFF" size="large" />
+          <Text style={s.gateTitle}>
+            {phase === "pre-call-ad" ? "Free plan: a short ad supports this call" : "We couldn't show the free-call ad"}
+          </Text>
+          <Text style={s.gateCopy}>
+            {phase === "pre-call-ad"
+              ? "Your call will connect right after the ad."
+              : "The ad was closed, unavailable, or didn't finish. You can try again, or upgrade to Premium for ad-free calling."}
+          </Text>
+          {phase === "pre-call-ad-failed" && (
+            <View style={s.gateActions}>
+              <Pressable
+                style={s.gateBtn}
+                onPress={() => {
+                  rewardEarnedRef.current = false;
+                  setPhase("pre-call-ad");
+                }}
+              >
+                <Text style={s.gateBtnText}>Try again</Text>
+              </Pressable>
+              <Pressable style={s.gateBtnAlt} onPress={leaveScreen}>
+                <Text style={s.gateBtnAltText}>Cancel</Text>
+              </Pressable>
+            </View>
+          )}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (phase === "insufficient-credits") {
+    return (
+      <SafeAreaView style={s.safe}>
+        <View style={s.gatePage}>
+          <Text style={s.gateTitle}>Not enough Pay As You Go credit</Text>
+          <Text style={s.gateCopy}>
+            Calls to mobile numbers use your 9tel credits balance. Top up to continue this call.
+          </Text>
+          <View style={s.gateActions}>
+            <Pressable
+              style={s.gateBtn}
+              onPress={() => {
+                leftRef.current = true;
+                router.replace("/(tabs)/(sub-tabs)/calling-plan");
+              }}
+            >
+              <Text style={s.gateBtnText}>Top up credits</Text>
+            </Pressable>
+            <Pressable style={s.gateBtnAlt} onPress={leaveScreen}>
+              <Text style={s.gateBtnAltText}>Cancel</Text>
+            </Pressable>
+          </View>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (phase === "post-call-ad") {
+    return (
+      <SafeAreaView style={s.safe}>
+        <View style={s.gatePage}>
+          <RewardedAdComponent onClose={leaveScreen} />
+          <ActivityIndicator color="#FFF" size="large" />
+          <Text style={s.gateTitle}>Thanks for calling with 9tel</Text>
+          <Text style={s.gateCopy}>One more quick ad, then you're all set.</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={s.safe}>
@@ -213,6 +399,14 @@ function Control({
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#211B59" },
   page: { flex: 1, padding: 23 },
+  gatePage: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32, gap: 10 },
+  gateTitle: { color: "#FFF", fontSize: 18, fontFamily: "Poppins-SemiBold", textAlign: "center", marginTop: 12 },
+  gateCopy: { color: "#D0CCFC", fontSize: 13, fontFamily: "Poppins-Regular", textAlign: "center", lineHeight: 19 },
+  gateActions: { marginTop: 18, width: "100%", gap: 10 },
+  gateBtn: { backgroundColor: "#5147AF", height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  gateBtnText: { color: "#FFF", fontFamily: "Poppins-SemiBold", fontSize: 14 },
+  gateBtnAlt: { backgroundColor: "rgba(255,255,255,.1)", height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  gateBtnAltText: { color: "#FFF", fontFamily: "Poppins-Medium", fontSize: 14 },
   top: { flexDirection: "row", justifyContent: "space-between" },
   brand: { color: "#FFF", fontSize: 27, fontFamily: "Poppins-Bold", letterSpacing: -1 },
   secure: { color: "#CFCBFF", fontSize: 11, fontFamily: "Poppins-Medium", marginTop: 9 },
@@ -268,3 +462,4 @@ const s = StyleSheet.create({
   },
   endText: { color: "#FFF", fontFamily: "Poppins-SemiBold", fontSize: 14 },
 });
+

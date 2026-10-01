@@ -93,9 +93,29 @@ async function createCheckoutSession(provider: "stripe" | "flutterwave", country
 export const createStripeCheckout = (countryCode: string) => createCheckoutSession("stripe", countryCode);
 export const createFlutterwaveCheckout = (countryCode: string) => createCheckoutSession("flutterwave", countryCode);
 
+// Premium — ad-free 9tel-to-9tel calling, one 30-day period per purchase;
+// the backend extends the user's existing period rather than overwriting
+// it (see backend/src/controllers/payments' fulfillPremiumOrder), so
+// renewing early never discards already-paid-for days.
+async function createPremiumCheckoutSession(provider: "stripe" | "flutterwave"): Promise<{ orderId: string; url: string }> {
+  const response = await fetch(`${API_BASE}/api/v1/payments/${provider}/create-premium-session`, {
+    method: "POST",
+    headers: { ...(await authHeader()), "Content-Type": "application/json" },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(data?.message || "Unable to start payment right now.");
+  return data;
+}
+
+export const createPremiumStripeCheckout = () => createPremiumCheckoutSession("stripe");
+export const createPremiumFlutterwaveCheckout = () => createPremiumCheckoutSession("flutterwave");
+
 export type OrderStatus = {
   status: "pending" | "paid" | "paid_unfulfilled" | "refunded" | "failed";
+  kind?: "number" | "credits" | "premium";
   phoneNumber: string | null;
+  creditsCents?: number;
+  premiumDays?: number;
 };
 
 // Fulfillment happens asynchronously via a provider webhook, not

@@ -5,6 +5,8 @@ import { Check, ChevronLeft, Clock3, Globe2, PhoneCall, ShieldCheck, Sparkles, U
 import { router } from "expo-router";
 import { useLoginContext } from "@/context/LoginProvider";
 import CallingPlanTiers from "@/components/CallingPlanTiers";
+import NineTelPlanCards from "@/components/NineTelPlanCards";
+import PayAsYouGoCard from "@/components/PayAsYouGoCard";
 import { getCallingPlansForCountry } from "@/constants/callingPlans";
 
 const benefits = [
@@ -15,7 +17,7 @@ const benefits = [
 ];
 
 export default function CallingPlan() {
-  const { user } = useLoginContext();
+  const { user, setUser } = useLoginContext();
   const regionalPlans = useMemo(() => getCallingPlansForCountry(user?.country), [user?.country]);
   const [selectedTierId, setSelectedTierId] = useState<string | null>(
     () => regionalPlans?.tiers.find((tier) => tier.popular)?.id ?? regionalPlans?.tiers[0]?.id ?? null,
@@ -66,6 +68,13 @@ export default function CallingPlan() {
             onSelect={setSelectedTierId}
           />
         )}
+
+        <NineTelPlanCards
+          isPremium={user?.isPremium === true}
+          onUpgraded={() => setUser((current: any) => (current ? { ...current, isPremium: true } : current))}
+        />
+
+        <PayAsYouGoCard />
 
         <Pressable style={s.primary} onPress={() => router.push("/(tabs)/(sub-tabs)/settings")}>
           <PhoneCall size={18} color="#FFF" /><Text style={s.primaryText}>Set up your number</Text>

@@ -1,0 +1,20 @@
+// Pay As You Go credit top-up packs — mirrors backend/src/controllers/payments
+// CREDIT_PACKS exactly (same ids, same cents amounts) so the price shown
+// before checkout always matches what's actually charged. If the backend
+// pack config ever changes, update both sides together.
+export type CreditPack = {
+  id: "500" | "1000" | "2500";
+  creditsCents: number;
+  priceUsdCents: number;
+  priceNgn: number;
+};
+
+export const CREDIT_PACKS: CreditPack[] = [
+  { id: "500", creditsCents: 500, priceUsdCents: 500, priceNgn: 3000 },
+  { id: "1000", creditsCents: 1000, priceUsdCents: 1000, priceNgn: 6000 },
+  { id: "2500", creditsCents: 2500, priceUsdCents: 2500, priceNgn: 15000 },
+];
+
+export function formatCents(cents: number, currencySymbol = "$"): string {
+  return `${currencySymbol}${(cents / 100).toFixed(2)}`;
+}

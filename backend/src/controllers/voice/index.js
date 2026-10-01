@@ -225,6 +225,23 @@ exports.outgoingDialStatus = async (req, res) => {
       dialCallDuration: req.body?.DialCallDuration,
       callSid: req.body?.DialCallSid,
     });
+
+    // Pay As You Go billing. `fallbackTo` reaching this far (rather than
+    // being intercepted above) means the FIRST leg — the app-to-app
+    // attempt — connected: a free/premium 9tel-to-9tel call, not a carrier
+    // leg, so it must never be billed even though `To` is still the E.164
+    // number that was originally dialed (Twilio echoes the parent call's
+    // own params here, not the Dial leg's). Every other completed leg with
+    // an E.164 `To` is a real PSTN leg that actually reached a carrier —
+    // either the one direct-dial path, or the second (fallback) leg after
+    // the 9tel app didn't pick up — and is billed against the caller's
+    // credits balance using Twilio's own reported duration.
+    const to = String(req.body?.To || "").trim();
+    const appToAppSuccess = Boolean(fallbackTo) && dialCallStatus === "completed";
+    if (dialCallStatus === "completed" && !appToAppSuccess && E164.test(to)) {
+      const { debitForCompletedCall } = require("../credits");
+      await debitForCompletedCall(match[1], Number(req.body?.DialCallDuration) || 0);
+    }
   }
   return respondToDialOutcome(res, dialCallStatus);
 };

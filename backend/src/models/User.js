@@ -42,6 +42,14 @@ const userSchema = new mongoose.Schema(
     verifiedCallerId: { type: String, unique: true, sparse: true },
     isPremium: { type: Boolean, default: false },
     premiumUntil: Date,
+    // Pay As You Go balance, in whole US cents, for 9tel-to-carrier calls.
+    // Only ever changed here (a) by creditsOrder fulfillment, once a
+    // top-up payment is confirmed (see controllers/payments), and (b) by
+    // controllers/voice's outgoing-call status webhook, which deducts the
+    // authoritative, Twilio-reported duration of a completed carrier call.
+    // The mobile app only ever reads this value — it must never derive or
+    // apply its own deduction.
+    creditsBalanceCents: { type: Number, default: 0 },
     status: { type: String, enum: ["active", "inactive"], default: "active" },
     resetCode: String,
     resetCodeExpires: Date,

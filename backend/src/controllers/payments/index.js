@@ -10,6 +10,29 @@ const NUMBER_PRICE_USD_CENTS = Number(process.env.NUMBER_PRICE_USD_CENTS || 500)
 // own Standard API expects it), used for Flutterwave.
 const NUMBER_PRICE_NGN = Number(process.env.NUMBER_PRICE_NGN || 3000); // ₦3,000 default
 
+// Credit packs offered for the Pay As You Go top-up flow. Keyed by a short
+// id the mobile app selects from (see constants/creditPacks.ts, which
+// mirrors these exact cents amounts so the price shown before checkout
+// matches what's actually charged). `creditsCents` is how much balance is
+// added; `priceUsdCents`/`priceNgn` is what's actually charged, intentionally
+// equal to creditsCents today (no markup) but kept distinct from it so a
+// promotional or region-specific price could diverge later without
+// changing how much credit a pack grants.
+const CREDIT_PACKS = {
+  "500": { creditsCents: 500, priceUsdCents: 500, priceNgn: 3000 },
+  "1000": { creditsCents: 1000, priceUsdCents: 1000, priceNgn: 6000 },
+  "2500": { creditsCents: 2500, priceUsdCents: 2500, priceNgn: 15000 },
+};
+
+// Premium — ad-free 9tel-to-9tel calling. A single monthly period, billed
+// as a one-off Checkout payment rather than Stripe/Flutterwave's own
+// recurring-subscription primitives (no renewal reminders or recurring
+// webhooks yet) — see constants/callingPlans.ts' PREMIUM_PLAN on the mobile
+// side, which mirrors this exact price.
+const PREMIUM_PRICE_USD_CENTS = Number(process.env.PREMIUM_PRICE_USD_CENTS || 499); // $4.99/mo default
+const PREMIUM_PRICE_NGN = Number(process.env.PREMIUM_PRICE_NGN || 2500); // ₦2,500/mo default
+const PREMIUM_PERIOD_DAYS = 30;
+
 function stripeClient() {
   if (!process.env.STRIPE_SECRET_KEY) throw new Error("Stripe is not configured.");
   const Stripe = require("stripe");
@@ -42,7 +65,77 @@ async function refundFlutterwave(order) {
 // call itself failing is logged loudly rather than swallowed — that
 // scenario needs a human, and silently losing track of it would be worse
 // than a noisy log line.
+async function refundOrder(order) {
+  if (order.provider === "stripe") await refundStripe(order);
+  else await refundFlutterwave(order);
+}
+
+// Runs after a kind: "credits" top-up payment is confirmed — adds the
+// purchased balance to the user's creditsBalanceCents. This is a plain DB
+// increment, not a third-party purchase, so failure is rare, but a paid
+// order whose balance never got applied is still real money with nothing
+// delivered — handled the same way as a failed number fulfillment: an
+// automatic refund, with the same "needs a human" escalation if that also
+// fails.
+async function fulfillCreditsOrder(order) {
+  if (order.status === "paid" && order.fulfilledCreditsCents) return order.fulfilledCreditsCents; // already done — webhook redelivery
+  try {
+    const User = require("../../models/User");
+    await User.findByIdAndUpdate(order.user, { $inc: { creditsBalanceCents: order.creditsCents } });
+    order.status = "paid";
+    order.fulfilledCreditsCents = order.creditsCents;
+    await order.save();
+    return order.creditsCents;
+  } catch (fulfillmentError) {
+    console.error(`Credits fulfillment failed for order ${order._id} after payment succeeded:`, fulfillmentError.message);
+    order.status = "paid_unfulfilled";
+    await order.save();
+    try {
+      await refundOrder(order);
+      order.status = "refunded";
+      await order.save();
+    } catch (refundError) {
+      console.error(`AUTOMATIC REFUND FAILED for order ${order._id} — needs manual handling:`, refundError.response?.data || refundError.message);
+    }
+    return null;
+  }
+}
+
+// Runs after a kind: "premium" payment is confirmed — extends the user's
+// premiumUntil by PREMIUM_PERIOD_DAYS from either now, or their current
+// premiumUntil if they're already Premium and it hasn't lapsed yet (so
+// renewing early doesn't lose the remaining days already paid for).
+async function fulfillPremiumOrder(order) {
+  if (order.status === "paid" && order.fulfilledPremiumDays) return order.fulfilledPremiumDays; // already done — webhook redelivery
+  try {
+    const User = require("../../models/User");
+    const user = await User.findById(order.user).select("premiumUntil");
+    const now = Date.now();
+    const base = user?.premiumUntil && new Date(user.premiumUntil).getTime() > now ? new Date(user.premiumUntil).getTime() : now;
+    const premiumUntil = new Date(base + order.premiumDays * 24 * 60 * 60 * 1000);
+    await User.findByIdAndUpdate(order.user, { isPremium: true, premiumUntil });
+    order.status = "paid";
+    order.fulfilledPremiumDays = order.premiumDays;
+    await order.save();
+    return order.premiumDays;
+  } catch (fulfillmentError) {
+    console.error(`Premium fulfillment failed for order ${order._id} after payment succeeded:`, fulfillmentError.message);
+    order.status = "paid_unfulfilled";
+    await order.save();
+    try {
+      await refundOrder(order);
+      order.status = "refunded";
+      await order.save();
+    } catch (refundError) {
+      console.error(`AUTOMATIC REFUND FAILED for order ${order._id} — needs manual handling:`, refundError.response?.data || refundError.message);
+    }
+    return null;
+  }
+}
+
 async function fulfillOrder(order) {
+  if (order.kind === "credits") return fulfillCreditsOrder(order);
+  if (order.kind === "premium") return fulfillPremiumOrder(order);
   if (order.status === "paid" && order.fulfilledPhoneNumber) return order.fulfilledPhoneNumber; // already done — webhook redelivery
   try {
     const phoneNumber = await purchaseAndAssignNumber(order.user, order.countryCode);
@@ -55,8 +148,7 @@ async function fulfillOrder(order) {
     order.status = "paid_unfulfilled";
     await order.save();
     try {
-      if (order.provider === "stripe") await refundStripe(order);
-      else await refundFlutterwave(order);
+      await refundOrder(order);
       order.status = "refunded";
       await order.save();
     } catch (refundError) {
@@ -112,6 +204,110 @@ exports.createStripeSession = async (req, res) => {
     return res.status(200).json({ orderId: order._id, url: session.url });
   } catch (error) {
     console.error("Unable to create Stripe session:", error.message);
+    return res.status(503).json({ message: "Unable to start payment right now. Please try again later." });
+  }
+};
+
+function resolveCreditPack(packId) {
+  const pack = CREDIT_PACKS[String(packId)];
+  if (!pack) {
+    const err = new Error("Choose a valid credits pack.");
+    err.status = 400;
+    throw err;
+  }
+  return pack;
+}
+
+// POST /api/v1/payments/stripe/create-credits-session  { packId }
+// Pay As You Go top-up — mirrors createStripeSession above but for adding
+// to creditsBalanceCents (see controllers/credits) instead of provisioning
+// a number; the fulfillment branch for kind: "credits" is fulfillCreditsOrder.
+exports.createCreditsStripeSession = async (req, res) => {
+  try {
+    const pack = resolveCreditPack(req.body?.packId);
+    const stripe = stripeClient();
+    const order = await Order.create({
+      user: req.user._id,
+      provider: "stripe",
+      kind: "credits",
+      creditsCents: pack.creditsCents,
+      amount: pack.priceUsdCents,
+      currency: "usd",
+      providerReference: "pending", // replaced with the real session id right after
+      status: "pending",
+    });
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: { name: "9tel Pay As You Go credits" },
+            unit_amount: pack.priceUsdCents,
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return?status=success`,
+      cancel_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return?status=cancelled`,
+      client_reference_id: order._id.toString(),
+      metadata: { orderId: order._id.toString() },
+    });
+
+    order.providerReference = session.id;
+    await order.save();
+
+    return res.status(200).json({ orderId: order._id, url: session.url });
+  } catch (error) {
+    console.error("Unable to create Stripe credits session:", error.message);
+    return res.status(error.status || 503).json({ message: error.status ? error.message : "Unable to start payment right now. Please try again later." });
+  }
+};
+
+// POST /api/v1/payments/stripe/create-premium-session
+// Premium — ad-free 9tel-to-9tel calling, one PREMIUM_PERIOD_DAYS period
+// per order. The fulfillment branch for kind: "premium" is
+// fulfillPremiumOrder, which extends premiumUntil rather than overwriting
+// it, so renewing before the current period lapses doesn't lose days.
+exports.createPremiumStripeSession = async (req, res) => {
+  try {
+    const stripe = stripeClient();
+    const order = await Order.create({
+      user: req.user._id,
+      provider: "stripe",
+      kind: "premium",
+      premiumDays: PREMIUM_PERIOD_DAYS,
+      amount: PREMIUM_PRICE_USD_CENTS,
+      currency: "usd",
+      providerReference: "pending", // replaced with the real session id right after
+      status: "pending",
+    });
+
+    const session = await stripe.checkout.sessions.create({
+      mode: "payment",
+      line_items: [
+        {
+          price_data: {
+            currency: "usd",
+            product_data: { name: "9tel Premium (ad-free calling, 30 days)" },
+            unit_amount: PREMIUM_PRICE_USD_CENTS,
+          },
+          quantity: 1,
+        },
+      ],
+      success_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return?status=success`,
+      cancel_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return?status=cancelled`,
+      client_reference_id: order._id.toString(),
+      metadata: { orderId: order._id.toString() },
+    });
+
+    order.providerReference = session.id;
+    await order.save();
+
+    return res.status(200).json({ orderId: order._id, url: session.url });
+  } catch (error) {
+    console.error("Unable to create Stripe premium session:", error.message);
     return res.status(503).json({ message: "Unable to start payment right now. Please try again later." });
   }
 };
@@ -200,6 +396,101 @@ exports.createFlutterwaveSession = async (req, res) => {
   }
 };
 
+// POST /api/v1/payments/flutterwave/create-credits-session  { packId }
+// Pay As You Go top-up — mirrors createFlutterwaveSession above but for
+// adding to creditsBalanceCents (see controllers/credits) instead of
+// provisioning a number.
+exports.createCreditsFlutterwaveSession = async (req, res) => {
+  try {
+    if (!process.env.FLW_SECRET_KEY) throw new Error("Flutterwave is not configured.");
+    const pack = resolveCreditPack(req.body?.packId);
+
+    const order = await Order.create({
+      user: req.user._id,
+      provider: "flutterwave",
+      kind: "credits",
+      creditsCents: pack.creditsCents,
+      amount: pack.priceNgn,
+      currency: "NGN",
+      providerReference: `9tel-${crypto.randomUUID()}`,
+      status: "pending",
+    });
+
+    const response = await axios.post(
+      "https://api.flutterwave.com/v3/payments",
+      {
+        tx_ref: order.providerReference,
+        amount: String(pack.priceNgn),
+        currency: "NGN",
+        redirect_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return`,
+        customer: {
+          email: req.user.email || `${req.user._id}@guest.9tel.app`,
+          name: req.user.fullName || "9tel user",
+        },
+        customizations: { title: "9tel Pay As You Go credits" },
+        meta: { orderId: order._id.toString() },
+      },
+      { headers: { Authorization: "Bearer " + process.env.FLW_SECRET_KEY } }
+    );
+
+    if (response.data?.status !== "success" || !response.data?.data?.link) {
+      throw new Error("Flutterwave did not return a payment link.");
+    }
+
+    return res.status(200).json({ orderId: order._id, url: response.data.data.link });
+  } catch (error) {
+    console.error("Unable to create Flutterwave credits session:", error.response?.data || error.message);
+    return res.status(error.status || 503).json({ message: error.status ? error.message : "Unable to start payment right now. Please try again later." });
+  }
+};
+
+// POST /api/v1/payments/flutterwave/create-premium-session
+// Premium — ad-free 9tel-to-9tel calling. Mirrors
+// createPremiumStripeSession above; see its own comment for the
+// fulfillment/renewal behavior.
+exports.createPremiumFlutterwaveSession = async (req, res) => {
+  try {
+    if (!process.env.FLW_SECRET_KEY) throw new Error("Flutterwave is not configured.");
+
+    const order = await Order.create({
+      user: req.user._id,
+      provider: "flutterwave",
+      kind: "premium",
+      premiumDays: PREMIUM_PERIOD_DAYS,
+      amount: PREMIUM_PRICE_NGN,
+      currency: "NGN",
+      providerReference: `9tel-${crypto.randomUUID()}`,
+      status: "pending",
+    });
+
+    const response = await axios.post(
+      "https://api.flutterwave.com/v3/payments",
+      {
+        tx_ref: order.providerReference,
+        amount: String(PREMIUM_PRICE_NGN),
+        currency: "NGN",
+        redirect_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return`,
+        customer: {
+          email: req.user.email || `${req.user._id}@guest.9tel.app`,
+          name: req.user.fullName || "9tel user",
+        },
+        customizations: { title: "9tel Premium (ad-free calling, 30 days)" },
+        meta: { orderId: order._id.toString() },
+      },
+      { headers: { Authorization: "Bearer " + process.env.FLW_SECRET_KEY } }
+    );
+
+    if (response.data?.status !== "success" || !response.data?.data?.link) {
+      throw new Error("Flutterwave did not return a payment link.");
+    }
+
+    return res.status(200).json({ orderId: order._id, url: response.data.data.link });
+  } catch (error) {
+    console.error("Unable to create Flutterwave premium session:", error.response?.data || error.message);
+    return res.status(503).json({ message: "Unable to start payment right now. Please try again later." });
+  }
+};
+
 // POST /api/v1/payments/flutterwave/webhook
 // Authenticated by the verif-hash header, a shared secret you set once in
 // the Flutterwave dashboard — this is a plain string compare, not a
@@ -274,6 +565,11 @@ exports.getOrderStatus = async (req, res) => {
   if (!order) return res.status(404).json({ message: "Order not found" });
   return res.status(200).json({
     status: order.status,
+    kind: order.kind,
     phoneNumber: order.fulfilledPhoneNumber,
+    creditsCents: order.fulfilledCreditsCents,
+    premiumDays: order.fulfilledPremiumDays,
   });
 };
+
+exports._private = { fulfillOrder, fulfillCreditsOrder, fulfillPremiumOrder, CREDIT_PACKS };

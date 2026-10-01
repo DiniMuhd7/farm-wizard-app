@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Audio } from "expo-av";
+import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from "expo-av";
 import { API_BASE, refreshGuestSession } from "@/config/client";
 
 // Real states a Call goes through, sourced from Twilio's own
@@ -105,6 +105,31 @@ async function ensureMicPermission(): Promise<void> {
   );
 }
 
+// app.json already declares UIBackgroundModes: ["audio", "voip"], which only
+// grants iOS the *entitlement* to keep audio running in the background — it
+// does not itself keep anything alive. Without an explicit
+// staysActiveInBackground audio session, iOS/Android tear down the mic/
+// speaker as soon as the app is minimized, so a call can stay "connected" at
+// the signaling level while the user hears nothing. This is called right
+// before a call is placed or accepted so every real call path gets it; it's
+// best-effort because a platform/SDK quirk rejecting one option here should
+// never block placing or receiving the call itself.
+async function ensureBackgroundAudioSession(): Promise<void> {
+  try {
+    await Audio.setAudioModeAsync({
+      allowsRecordingIOS: true,
+      staysActiveInBackground: true,
+      playsInSilentModeIOS: true,
+      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
+      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
+      shouldDuckAndroid: false,
+      playThroughEarpieceAndroid: false,
+    });
+  } catch (error) {
+    console.warn("Unable to configure background audio session:", (error as Error)?.message);
+  }
+}
+
 function getVoice(): VoiceInstance {
   if (voice) return voice;
 
@@ -141,6 +166,7 @@ function getVoice(): VoiceInstance {
       from: callerIdFrom(callInvite),
       accept: async () => {
         await ensureMicPermission();
+        await ensureBackgroundAudioSession();
         activeCall = await callInvite.accept();
         return activeCall;
       },
@@ -171,6 +197,7 @@ async function accessToken() {
 
 export async function startVoiceCall(destination: string): Promise<VoiceCall> {
   await ensureMicPermission();
+  await ensureBackgroundAudioSession();
   const token = await accessToken();
   activeCall = await getVoice().connect(token, { params: { To: destination } });
   return activeCall;

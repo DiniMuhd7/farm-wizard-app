@@ -3,6 +3,7 @@ import { Alert, Animated, Pressable, StyleSheet, Text, View } from "react-native
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Mic, MicOff, PhoneOff, Speaker, UserPlus, Volume2 } from "lucide-react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import { useKeepAwake } from "expo-keep-awake";
 import {
   endActiveVoiceCall,
   getActiveVoiceCall,
@@ -24,6 +25,12 @@ const STATUS_LABEL: Record<CallStatus, string> = {
 };
 
 export default function CallScreen() {
+  // Keeps the screen from auto-locking for as long as this screen is
+  // mounted, i.e. for the whole call — a locked screen on some devices
+  // suspends the app enough to interrupt the audio session before
+  // `staysActiveInBackground` (services/voice.ts) can take over.
+  useKeepAwake();
+
   const { number = "+234 801 234 5678", video } = useLocalSearchParams<{ number: string; video: string }>();
   const displayNumber = Array.isArray(number) ? number[0] : number;
   const initial = displayNumber.replace(/[^a-z0-9]/gi, "").charAt(0).toUpperCase() || "?";

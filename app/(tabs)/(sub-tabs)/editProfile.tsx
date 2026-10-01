@@ -123,7 +123,7 @@ const EditProfile = () => {
               placeholder="Full name"
               value={form.fullName}
               handleChangeText={(e: any) => setForm({ ...form, fullName: e })}
-              variant="auth"
+              variant="light"
             />
             {errors.fullName && <Text style={styles.error}>{errors.fullName}</Text>}
           </View>
@@ -142,7 +142,7 @@ const EditProfile = () => {
               value={form.password}
               handleChangeText={(e: any) => setForm({ ...form, password: e })}
               secureTextEntry
-              variant="auth"
+              variant="light"
             />
             {errors.password && <Text style={styles.error}>{errors.password}</Text>}
             <FormField
@@ -152,7 +152,7 @@ const EditProfile = () => {
               handleChangeText={(e: any) => setForm({ ...form, cpassword: e })}
               otherStyles="mt-4"
               secureTextEntry
-              variant="auth"
+              variant="light"
             />
             {errors.cpassword && <Text style={styles.error}>{errors.cpassword}</Text>}
           </View>
@@ -187,7 +187,9 @@ const styles = StyleSheet.create({
   languageCard: { backgroundColor: "#FFF", borderRadius: 19, paddingHorizontal: 15, paddingTop: 14, overflow: "hidden" },
   fieldTitle: { color: "#514D66", fontFamily: "Poppins-Medium", fontSize: 12, paddingHorizontal: 5 },
   formCard: { backgroundColor: "#FFF", borderRadius: 19, padding: 15 },
-  error: { color: "#D95C58", fontFamily: "Poppins-Regular", fontSize: 11, marginTop: 5 },
+  // Matches the error-text token used elsewhere (e.g. the number-purchase
+  // flow in settings.tsx) rather than a one-off red.
+  error: { color: "#D9534F", fontFamily: "Poppins-Regular", fontSize: 11, marginTop: 5 },
   passwordHeading: { flexDirection: "row", alignItems: "center", marginTop: 23, marginBottom: 10 },
   passwordIcon: { height: 34, width: 34, borderRadius: 12, backgroundColor: "#EEECFF", alignItems: "center", justifyContent: "center", marginRight: 10 },
   passwordCopy: { flex: 1 },

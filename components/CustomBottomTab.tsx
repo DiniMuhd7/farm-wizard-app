@@ -44,6 +44,7 @@ export default function CustomBottomTab({ state, navigation }: BottomTabBarProps
             <Pressable
               key={route.key}
               accessibilityRole="tab"
+              accessibilityLabel={meta.label}
               accessibilityState={{ selected: active }}
               // onPressIn, not onPress: onPress only fires after a full
               // touch-down-then-up cycle that also has to pass React
@@ -74,7 +75,11 @@ export default function CustomBottomTab({ state, navigation }: BottomTabBarProps
 const s = StyleSheet.create({
   wrap: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "#FFF", borderTopWidth: 1, borderTopColor: "#F0EFF5", paddingTop: 8, paddingBottom: 20 },
   bar: { flexDirection: "row", justifyContent: "space-around" },
-  tab: { alignItems: "center", minWidth: 72 },
+  // flex: 1 (instead of a shrink-to-content minWidth) makes each tab's
+  // Pressable span its full share of the bar's width, so the press target
+  // covers the whole column — including the gap next to a short label like
+  // "Stats" — not just the icon/label's own intrinsic size.
+  tab: { flex: 1, alignItems: "center", paddingVertical: 2, minWidth: 72 },
   icon: { height: 33, width: 44, borderRadius: 13, alignItems: "center", justifyContent: "center" },
   activeIcon: { backgroundColor: "#625BC1" },
   label: { fontFamily: "Poppins-Regular", fontSize: 10.5, color: "#9692A7", marginTop: 3 },

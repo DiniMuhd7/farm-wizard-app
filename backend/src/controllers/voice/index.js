@@ -70,9 +70,10 @@ exports.outgoingCallTwiML = async (req, res) => {
   const from = String(req.body?.From || "");
   const callerMatch = from.match(/^client:user-([A-Za-z0-9]+)$/);
   let callerId = process.env.TWILIO_CALLER_ID;
+  let caller = null;
   if (callerMatch) {
     const User = require("../../models/User");
-    const caller = await User.findById(callerMatch[1]).select("verifiedCallerId").lean();
+    caller = await User.findById(callerMatch[1]).select("verifiedCallerId phoneNumber isGuest").lean();
     if (caller?.verifiedCallerId) callerId = caller.verifiedCallerId;
   }
   if (!callerId || !E164.test(callerId)) return res.status(503).type("text/plain").send("Voice caller ID is not configured");
@@ -90,8 +91,15 @@ exports.outgoingCallTwiML = async (req, res) => {
   // number belonging to this system, not an arbitrary external destination.
   if (E164.test(destination)) {
     const User = require("../../models/User");
-    const owner = await User.findOne({ phoneNumber: destination }).select("_id").lean();
-    if (owner) {
+    // A 9tel account is identified by either its provisioned 9tel number or
+    // its own verified real number — the same two numbers
+    // controllers/numbers' lookupNumber matches on, so what the app
+    // previews is exactly what gets routed.
+    const owner = await User.findOne({
+      status: { $ne: "inactive" },
+      $or: [{ phoneNumber: destination }, { verifiedCallerId: destination }],
+    }).select("_id").lean();
+    if (owner && String(owner._id) !== callerMatch?.[1]) {
       const identity = escapedXml(`user-${owner._id.toString()}`);
       // Short timeout: this is the "try the app" attempt, not the real
       // call — if it's going to connect at all, it'll ring and answer well
@@ -106,8 +114,40 @@ exports.outgoingCallTwiML = async (req, res) => {
   }
 
   if (!isAllowedDestination(destination)) return res.status(400).type("text/xml").send("<Response><Say>That destination is not permitted.</Say></Response>");
+
+  // Carrier (PSTN) leg. Enforced here, server-side, from the database — the
+  // app's own checks are only a courtesy. Order of precedence:
+  //   1. enough Pay As You Go credits for a minute -> normal billed call
+  //   2. otherwise the user's one-time welcome minute, hard-capped by
+  //      Twilio itself via <Dial timeLimit>, never by the client
+  //   3. otherwise the call is refused
+  // Calls to the caller's own numbers never qualify for the reward.
+  let timeLimitAttr = "";
+  if (callerMatch && E164.test(destination)) {
+    const { RATE_PER_MINUTE_CENTS } = require("../credits");
+    const User = require("../../models/User");
+    const account = await User.findById(callerMatch[1]).select("creditsBalanceCents").lean();
+    const hasCredits = (account?.creditsBalanceCents || 0) >= RATE_PER_MINUTE_CENTS;
+    if (!hasCredits) {
+      const ownNumber = destination === caller?.verifiedCallerId || destination === caller?.phoneNumber;
+      let freeSeconds = 0;
+      if (!ownNumber && !caller?.isGuest) {
+        try {
+          const { ensureWelcomeReward, reserveForCall } = require("../rewards");
+          await ensureWelcomeReward(callerMatch[1]);
+          freeSeconds = await reserveForCall(callerMatch[1], String(req.body?.CallSid || ""));
+        } catch (error) {
+          console.error("Unable to apply welcome reward:", error.message);
+        }
+      }
+      if (!freeSeconds) {
+        return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Say>You do not have enough credit to place this call. Please top up and try again.</Say></Response>`);
+      }
+      timeLimitAttr = ` timeLimit="${freeSeconds}"`;
+    }
+  }
   const noun = destination.startsWith("client:") ? `<Client>${escapedXml(destination.slice(7))}</Client>` : `<Number>${escapedXml(destination)}</Number>`;
-  return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerId}" action="${action}" method="POST">${noun}</Dial></Response>`);
+  return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerId}"${timeLimitAttr} action="${action}" method="POST">${noun}</Dial></Response>`);
 };
 
 // Twilio hits this whenever someone dials a 9tel number on the PSTN. `To` is
@@ -238,9 +278,24 @@ exports.outgoingDialStatus = async (req, res) => {
     // credits balance using Twilio's own reported duration.
     const to = String(req.body?.To || "").trim();
     const appToAppSuccess = Boolean(fallbackTo) && dialCallStatus === "completed";
-    if (dialCallStatus === "completed" && !appToAppSuccess && E164.test(to)) {
-      const { debitForCompletedCall } = require("../credits");
-      await debitForCompletedCall(match[1], Number(req.body?.DialCallDuration) || 0);
+    if (!appToAppSuccess && E164.test(to)) {
+      // Settle the welcome-reward reservation (if this call held one)
+      // before billing: a redeemed free minute is never also debited, and
+      // a call that never connected hands the reward back.
+      let rewardOutcome = null;
+      try {
+        const duration = Number(req.body?.DialCallDuration) || 0;
+        rewardOutcome = await require("../rewards").settleForCall(match[1], String(req.body?.CallSid || ""), {
+          connected: dialCallStatus === "completed" && duration > 0,
+          durationSeconds: duration,
+        });
+      } catch (error) {
+        console.error("Unable to settle welcome reward:", error.message);
+      }
+      if (dialCallStatus === "completed" && rewardOutcome !== "redeemed") {
+        const { debitForCompletedCall } = require("../credits");
+        await debitForCompletedCall(match[1], Number(req.body?.DialCallDuration) || 0);
+      }
     }
   }
   return respondToDialOutcome(res, dialCallStatus);

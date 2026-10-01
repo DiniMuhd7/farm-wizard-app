@@ -1,13 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Check, ChevronLeft, Clock3, Globe2, PhoneCall, ShieldCheck, Sparkles, UserRoundCheck } from "lucide-react-native";
+import { Check, ChevronLeft, Clock3, Gift, Globe2, PhoneCall, ShieldCheck, Sparkles, UserRoundCheck, Users } from "lucide-react-native";
 import { router } from "expo-router";
 import { useLoginContext } from "@/context/LoginProvider";
 import CallingPlanTiers from "@/components/CallingPlanTiers";
 import NineTelPlanCards from "@/components/NineTelPlanCards";
 import PayAsYouGoCard from "@/components/PayAsYouGoCard";
 import { getCallingPlansForCountry } from "@/constants/callingPlans";
+import { getWelcomeReward, type WelcomeRewardStatus } from "@/services/rewards";
 
 const benefits = [
   { title: "Choose your 9tel number", detail: "Pick from countries where numbers are currently available.", Icon: Globe2 },
@@ -19,6 +20,16 @@ const benefits = [
 export default function CallingPlan() {
   const { user, setUser } = useLoginContext();
   const regionalPlans = useMemo(() => getCallingPlansForCountry(user?.country), [user?.country]);
+  const [welcome, setWelcome] = useState<WelcomeRewardStatus | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getWelcomeReward().then((value) => {
+      if (!cancelled) setWelcome(value);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const [selectedTierId, setSelectedTierId] = useState<string | null>(
     () => regionalPlans?.tiers.find((tier) => tier.popular)?.id ?? regionalPlans?.tiers[0]?.id ?? null,
   );
@@ -33,12 +44,44 @@ export default function CallingPlan() {
         <Text style={s.title}>Calling plan</Text>
         <Text style={s.sub}>Everything you need to make 9tel calls work for you.</Text>
 
-        <View style={s.card}>
+        <View style={s.card} accessible accessibilityRole="summary">
           <View style={s.badge}><Sparkles size={17} color="#DCD8FF" /><Text style={s.badgeText}>9TEL CALLING</Text></View>
-          <Text style={s.plan}>Your number. Your calls.</Text>
-          <Text style={s.copy}>Set up a 9tel number to get started. Availability and pricing are shown before you confirm a purchase.</Text>
-          <View style={s.status}><View style={s.dot} /><Text style={s.statusText}>Ready to set up</Text></View>
+          <Text style={s.plan}>Pick how you want to call</Text>
+          <Text style={s.copy}>Calls to other 9tel users are free. Calls to mobile networks use prepaid credit — you only pay for what you use.</Text>
         </View>
+
+        <Text style={s.heading}>HOW EACH CALL IS CHARGED</Text>
+        <View style={s.compare}>
+          <View style={s.compareCol}>
+            <View style={s.icon}><Users size={17} color="#5147AF" /></View>
+            <Text style={s.rowTitle}>9tel → 9tel</Text>
+            <Text style={s.rowText}>Free with ads, or ad-free with Premium.</Text>
+          </View>
+          <View style={s.compareCol}>
+            <View style={s.icon}><PhoneCall size={17} color="#5147AF" /></View>
+            <Text style={s.rowTitle}>9tel → mobile</Text>
+            <Text style={s.rowText}>Pay As You Go credit, billed per minute.</Text>
+          </View>
+        </View>
+
+        {welcome?.status === "available" && (
+          <View style={s.reward} accessible accessibilityLabel="Welcome gift: one free minute to a mobile number">
+            <Gift size={20} color="#2E7D5B" />
+            <Text style={s.rewardText}>
+              <Text style={s.rewardStrong}>Welcome gift: </Text>
+              your first {Math.max(1, Math.round(welcome.seconds / 60))} minute to a mobile number is on us. One-time, applied automatically.
+            </Text>
+          </View>
+        )}
+        {welcome?.status === "verify_phone" && (
+          <Pressable style={s.reward} accessibilityRole="button" onPress={() => router.push("/(tabs)/(sub-tabs)/settings")}>
+            <Gift size={20} color="#2E7D5B" />
+            <Text style={s.rewardText}>
+              <Text style={s.rewardStrong}>Get 1 free minute to a mobile number. </Text>
+              Verify your phone number to unlock it — one per person.
+            </Text>
+          </Pressable>
+        )}
 
         <View style={s.headingRow}>
           <Text style={s.heading}>PLAN BENEFITS</Text>
@@ -98,9 +141,14 @@ const s = StyleSheet.create({
   status: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,.12)", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 7, marginTop: 17 },
   dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#7BE4BB", marginRight: 6 },
   statusText: { color: "#E6FFF4", fontFamily: "Poppins-Medium", fontSize: 10.5 },
+  compare: { flexDirection: "row", gap: 12, marginTop: 10 },
+  compareCol: { flex: 1, backgroundColor: "#FFF", borderRadius: 20, padding: 14, gap: 4 },
+  reward: { flexDirection: "row", alignItems: "center", gap: 11, backgroundColor: "#E8F7EF", borderRadius: 18, padding: 15, marginTop: 14, minHeight: 48 },
+  rewardText: { flex: 1, color: "#2F5E49", fontFamily: "Poppins-Regular", fontSize: 11.5, lineHeight: 17 },
+  rewardStrong: { fontFamily: "Poppins-SemiBold" },
   headingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 27, marginBottom: 10 },
-  heading: { color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 11, letterSpacing: 0.8 },
-  count: { color: "#8D899F", fontFamily: "Poppins-Regular", fontSize: 10 },
+  heading: { color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 11, letterSpacing: 0.8, marginTop: 27 },
+  count: { color: "#6B6880", fontFamily: "Poppins-Regular", fontSize: 11 },
   group: { backgroundColor: "#FFF", borderRadius: 20, paddingHorizontal: 14 },
   row: { flexDirection: "row", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderColor: "#F1F0F6" },
   lastRow: { borderBottomWidth: 0 },

@@ -119,6 +119,14 @@ exports.verificationCallback = async (req, res) => {
   if (userId && phoneNumber && status === "success") {
     try {
       await User.findByIdAndUpdate(userId, { verifiedCallerId: phoneNumber });
+      // Verified phone = the identity the one-time welcome reward is tied
+      // to. Failure here must not fail the verification itself; the reward
+      // is also (re)evaluated lazily at call time.
+      try {
+        await require("../rewards").ensureWelcomeReward(userId);
+      } catch (rewardError) {
+        console.error("Unable to record welcome reward:", rewardError.message);
+      }
     } catch (error) {
       console.error("Unable to save verified caller ID:", error.message);
       return res.status(500).type("text/plain").send("Unable to save verification");

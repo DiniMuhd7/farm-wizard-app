@@ -16,8 +16,17 @@
 // call through undetected.
 export type CallDestinationKind = "9tel" | "carrier" | "unknown";
 
+// Minimal, privacy-safe profile preview for a matched 9tel account — see
+// backend lookupNumber. Never includes email, id, or country.
+export type NineTelAccountPreview = {
+  displayName: string;
+  avatar: number | null;
+  profilePicture: string | null;
+};
+
 export type CallEligibility = {
   kind: CallDestinationKind;
+  account?: NineTelAccountPreview;
 };
 
 // The plan that actually governs a specific outgoing call, resolved from

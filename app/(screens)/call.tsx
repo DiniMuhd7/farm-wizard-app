@@ -17,7 +17,8 @@ import {
 import { useLoginContext } from "@/context/LoginProvider";
 import { classifyDestination } from "@/services/callEligibility";
 import { getCreditsBalance, hasSufficientCreditsForOneMinute } from "@/services/credits";
-import { resolveCallPlan, type ResolvedCallPlan } from "@/types/callPlans";
+import { getWelcomeReward } from "@/services/rewards";
+import { resolveCallPlan, type NineTelAccountPreview, type ResolvedCallPlan } from "@/types/callPlans";
 import RewardedAdComponent from "@/utils/RewardedAdComponent";
 
 const STATUS_LABEL: Record<CallStatus, string> = {
@@ -61,7 +62,8 @@ export default function CallScreen() {
   const { user } = useLoginContext();
   const { number = "+234 801 234 5678", video } = useLocalSearchParams<{ number: string; video: string }>();
   const displayNumber = Array.isArray(number) ? number[0] : number;
-  const initial = displayNumber.replace(/[^a-z0-9]/gi, "").charAt(0).toUpperCase() || "?";
+  const [account, setAccount] = useState<NineTelAccountPreview | null>(null);
+  const initial = (account?.displayName ?? displayNumber).replace(/[^a-z0-9]/gi, "").charAt(0).toUpperCase() || "?";
   const [status, setStatus] = useState<CallStatus>("connecting");
   const [muted, setMuted] = useState(false);
   const [speakerOn, setSpeakerOn] = useState(false);
@@ -89,8 +91,9 @@ export default function CallScreen() {
     let cancelled = false;
 
     (async () => {
-      const { kind } = await classifyDestination(displayNumber);
+      const { kind, account: matched } = await classifyDestination(displayNumber);
       if (cancelled) return;
+      setAccount(matched ?? null);
       const plan = resolveCallPlan(kind, user?.isPremium === true);
       planRef.current = plan;
 
@@ -103,7 +106,11 @@ export default function CallScreen() {
         try {
           const balance = await getCreditsBalance();
           if (cancelled) return;
-          if (!hasSufficientCreditsForOneMinute(balance)) {
+          // The one-time welcome minute counts as enough to place the call;
+          // the backend is what actually enforces it and its 60s cap.
+          const welcome = hasSufficientCreditsForOneMinute(balance) ? null : await getWelcomeReward();
+          if (cancelled) return;
+          if (!hasSufficientCreditsForOneMinute(balance) && welcome?.status !== "available") {
             setPhase("insufficient-credits");
             return;
           }
@@ -325,8 +332,8 @@ export default function CallScreen() {
           <View style={s.avatar}>
             <Text style={s.initial}>{initial}</Text>
           </View>
-          <Text style={s.name}>{displayNumber}</Text>
-          <Text style={s.number}>Phone number</Text>
+          <Text style={s.name}>{account?.displayName ?? displayNumber}</Text>
+          <Text style={s.number}>{account ? `${displayNumber} · 9tel account` : "Phone number"}</Text>
           <View style={s.status}>
             <View style={s.live} />
             <Text style={s.statusText}>
@@ -423,6 +430,7 @@ const s = StyleSheet.create({
     borderWidth: 7,
     borderColor: "rgba(255,255,255,.13)",
   },
+  number: { color: "#85829B", fontFamily: "Poppins-Regular", fontSize: 12, marginTop: 2 },
   initial: { fontSize: 58, color: "#6A3156", fontFamily: "Poppins-SemiBold" },
   name: { color: "#FFF", fontSize: 27, fontFamily: "Poppins-SemiBold", marginTop: 24 },
   number: { color: "#D0CCFC", fontSize: 13, fontFamily: "Poppins-Regular", marginTop: 3 },

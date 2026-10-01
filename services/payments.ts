@@ -12,19 +12,53 @@ export type AvailabilityResult =
   | { alreadyProvisioned: false; available: true; phoneNumber: string; countryCode: string }
   | { alreadyProvisioned: false; available: false; message: string };
 
+// 15s is generous for a request that fans out to ~195 per-country lookups
+// on the backend (see listAvailableCountries), but still bounded — without
+// this, a stalled connection left the picker's loading spinner spinning
+// forever instead of surfacing a retryable error.
+const AVAILABLE_COUNTRIES_TIMEOUT_MS = 15000;
+
 export async function getAvailableNumberCountries(countries: { value: string }[]): Promise<string[]> {
   const countryCodes = [...new Set(
     countries
       .map((country) => country.value.toUpperCase())
       .filter((code) => /^[A-Z]{2}$/.test(code)),
   )];
-  const response = await fetch(
-    `${API_BASE}/api/v1/numbers/available-countries?countryCodes=${encodeURIComponent(countryCodes.join(","))}`,
-    { headers: await authHeader() },
-  );
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.message || "Unable to load available countries right now.");
-  return data.countryCodes ?? [];
+  if (!countryCodes.length) return [];
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), AVAILABLE_COUNTRIES_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(
+      `${API_BASE}/api/v1/numbers/available-countries?countryCodes=${encodeURIComponent(countryCodes.join(","))}`,
+      { headers: await authHeader(), signal: controller.signal },
+    );
+  } catch (error) {
+    // AbortError (timeout) and generic network failures (offline, DNS,
+    // TLS, etc.) both land here — surface one consistent, retryable
+    // message rather than letting a raw TypeError reach the UI.
+    if ((error as Error)?.name === "AbortError") {
+      throw new Error("Loading available countries timed out. Please try again.");
+    }
+    throw new Error("Unable to reach 9tel right now. Check your connection and try again.");
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error((data && typeof data.message === "string" && data.message) || "Unable to load available countries right now.");
+  }
+  // The backend always returns { countryCodes: string[] } on success, but
+  // guard against a malformed/unexpected payload shape (e.g. an upstream
+  // proxy error page, a truncated response) instead of silently returning
+  // `[]` disguised as "no countries available".
+  if (!data || !Array.isArray(data.countryCodes)) {
+    throw new Error("Unable to load available countries right now.");
+  }
+  return data.countryCodes;
 }
 
 // A free preview of what number you'd get — nothing is purchased by

@@ -26,7 +26,20 @@ const BannerAdComponent = ({
 
   return (
     <View style={[styles.container, loaded ? styles.containerLoaded : null, style]}>
-      <View style={[styles.adSlot, loaded ? styles.visibleAd : styles.measuringAd]}>
+      <View
+        testID="banner-ad-slot"
+        style={[styles.adSlot, loaded ? styles.visibleAd : styles.measuringAd]}
+        // While unloaded/failed this slot is positioned absolutely over the
+        // bottom of the screen purely so AdMob can measure it (see
+        // `measuringAd` below) — it is invisible (opacity: 0) but, without
+        // this, still sat on top of the bottom tab bar's labels in the
+        // stacking order (this component is a sibling rendered *after*
+        // <Tabs> in app/(tabs)/_layout.jsx) and silently absorbed taps on
+        // them. `pointerEvents="none"` lets those taps pass through to the
+        // tab bar underneath; once the ad actually loads, `visibleAd` takes
+        // over and this prop is left `undefined` so the ad stays tappable.
+        pointerEvents={loaded ? undefined : "none"}
+      >
         <BannerAd
           key={adRequestKey}
           unitId={adUnitId}

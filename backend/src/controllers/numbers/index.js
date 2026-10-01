@@ -245,6 +245,30 @@ exports.lookupNumber = async (req, res) => {
   if (!E164.test(phoneNumber)) {
     return res.status(400).json({ message: "phoneNumber must be a valid E.164 number, e.g. +15551234567." });
   }
-  const owner = await User.findOne({ phoneNumber }).select("_id");
-  return res.status(200).json({ phoneNumber, is9telNumber: Boolean(owner) });
+  // A 9tel account is found by its provisioned 9tel number or its own
+  // verified real number (see controllers/callerid) — the same match
+  // controllers/voice's outgoingCallTwiML routes on.
+  const owner = await User.findOne({
+    status: { $ne: "inactive" },
+    $or: [{ phoneNumber }, { verifiedCallerId: phoneNumber }],
+  }).select("fullName avatar profilePicture");
+  if (!owner) return res.status(200).json({ phoneNumber, is9telNumber: false });
+  // Privacy: only what's needed to confirm "yes, that's the person I mean" —
+  // first name + last initial and avatar. Never email, id, or country.
+  return res.status(200).json({
+    phoneNumber,
+    is9telNumber: true,
+    account: {
+      displayName: maskedDisplayName(owner.fullName),
+      avatar: owner.avatar || null,
+      profilePicture: owner.profilePicture || null,
+    },
+  });
 };
+
+function maskedDisplayName(fullName) {
+  const parts = String(fullName || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "9tel user";
+  if (parts.length === 1) return parts[0];
+  return `${parts[0]} ${parts[parts.length - 1].charAt(0).toUpperCase()}.`;
+}

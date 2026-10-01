@@ -31,14 +31,18 @@ describe("numbers controller — lookupNumber", () => {
 
   it("reports is9telNumber: true when the destination belongs to a 9tel user", async () => {
     const User = require("../../models/User");
-    User.findOne.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: "owner1" }) });
+    User.findOne.mockReturnValue({ select: jest.fn().mockResolvedValue({ _id: "owner1", fullName: "Ada Lovelace Byron", email: "a@x.com", avatar: 3 }) });
     const { lookupNumber } = require("./index");
 
     const res = mockRes();
     await lookupNumber({ body: { phoneNumber: "+15555550123" } }, res);
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toEqual({ phoneNumber: "+15555550123", is9telNumber: true });
+    expect(res.body).toEqual({
+      phoneNumber: "+15555550123",
+      is9telNumber: true,
+      account: { displayName: "Ada B.", avatar: 3, profilePicture: null },
+    });
   });
 
   it("reports is9telNumber: false for a destination with no matching 9tel account", async () => {

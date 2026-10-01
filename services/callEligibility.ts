@@ -46,6 +46,9 @@ export async function classifyDestination(destination: string): Promise<CallElig
     const data = await response.json().catch(() => null);
     if (typeof data?.is9telNumber !== "boolean") return { kind: "unknown" };
     const kind: CallDestinationKind = data.is9telNumber ? "9tel" : "carrier";
+    if (kind === "9tel" && typeof data.account?.displayName === "string") {
+      return { kind, account: data.account };
+    }
     return { kind };
   } catch {
     return { kind: "unknown" };

@@ -37,8 +37,10 @@ export async function classifyDestination(destination: string): Promise<CallElig
   if (!E164.test(destination)) return { kind: "unknown" };
 
   try {
-    const response = await fetch(`${API_BASE}/api/v1/numbers/lookup?phoneNumber=${encodeURIComponent(destination)}`, {
-      headers: await authHeader(),
+    const response = await fetch(`${API_BASE}/api/v1/numbers/lookup`, {
+      method: "POST",
+      headers: { ...(await authHeader()), "Content-Type": "application/json" },
+      body: JSON.stringify({ phoneNumber: destination }),
     });
     if (!response.ok) return { kind: "unknown" };
     const data = await response.json().catch(() => null);

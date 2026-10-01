@@ -193,7 +193,10 @@ const E164 = /^\+[1-9]\d{6,14}$/;
 // phone number shape alone can't tell a 9tel-provisioned number apart from
 // an ordinary carrier number in the same country.
 exports.lookupNumber = async (req, res) => {
-  const phoneNumber = String(req.query?.phoneNumber || "").trim();
+  // POST with the number in the body, not a GET query param — a phone
+  // number is personal data that shouldn't end up in server/proxy access
+  // logs or browser history the way a query string can.
+  const phoneNumber = String(req.body?.phoneNumber || "").trim();
   if (!E164.test(phoneNumber)) {
     return res.status(400).json({ message: "phoneNumber must be a valid E.164 number, e.g. +15551234567." });
   }

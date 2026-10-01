@@ -35,7 +35,7 @@ describe("numbers controller — lookupNumber", () => {
     const { lookupNumber } = require("./index");
 
     const res = mockRes();
-    await lookupNumber({ query: { phoneNumber: "+15555550123" } }, res);
+    await lookupNumber({ body: { phoneNumber: "+15555550123" } }, res);
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ phoneNumber: "+15555550123", is9telNumber: true });
@@ -47,7 +47,7 @@ describe("numbers controller — lookupNumber", () => {
     const { lookupNumber } = require("./index");
 
     const res = mockRes();
-    await lookupNumber({ query: { phoneNumber: "+2348012345678" } }, res);
+    await lookupNumber({ body: { phoneNumber: "+2348012345678" } }, res);
 
     expect(res.statusCode).toBe(200);
     expect(res.body).toEqual({ phoneNumber: "+2348012345678", is9telNumber: false });
@@ -57,7 +57,7 @@ describe("numbers controller — lookupNumber", () => {
     const { lookupNumber } = require("./index");
 
     const res = mockRes();
-    await lookupNumber({ query: { phoneNumber: "not-a-number" } }, res);
+    await lookupNumber({ body: { phoneNumber: "not-a-number" } }, res);
 
     expect(res.statusCode).toBe(400);
     expect(res.body.message).toMatch(/E\.164/);

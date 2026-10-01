@@ -28,6 +28,8 @@ router.get("/available-countries", availableCountriesRateLimit, protect, listAva
 router.get("/available", protect, checkAvailability);
 // Eligibility check for the calling-plan model (Free/Premium 9tel-to-9tel
 // vs. Pay As You Go credits to a carrier) — see services/callPlans.ts.
-router.get("/lookup", lookupRateLimit, protect, lookupNumber);
+// POST (not GET) so the phone number travels in the body, not a logged
+// query string.
+router.post("/lookup", lookupRateLimit, protect, lookupNumber);
 
 module.exports = router;

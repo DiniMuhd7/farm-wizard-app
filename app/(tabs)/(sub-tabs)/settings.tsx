@@ -6,7 +6,7 @@ import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { getMyNumber } from "@/services/numbers";
 import { getCallerIdVerificationStatus, type CallerIdStatus } from "@/services/callerid";
-import { checkNumberAvailability, createFlutterwaveCheckout, getAvailableNumberCountries, getOrderStatus, toPaymentInitError, type PaymentCurrency } from "@/services/payments";
+import { checkNumberAvailability, createFlutterwaveCheckout, getAvailableNumberCountries, getOrderStatus, getPaymentPrices, toPaymentInitError, type PaymentCurrency, type PaymentPrices } from "@/services/payments";
 import CurrencySelector from "@/components/CurrencySelector";
 import { useLoginContext } from "@/context/LoginProvider";
 import { useCountryData } from "@/hooks/useCountryData";
@@ -46,6 +46,7 @@ export default function Settings() {
   const [previewNumber, setPreviewNumber] = useState<string | null>(null);
   const [paying, setPaying] = useState(false);
   const [currency, setCurrency] = useState<PaymentCurrency>("USD");
+  const [paymentPrices, setPaymentPrices] = useState<PaymentPrices | null>(null);
   const [processingMessage, setProcessingMessage] = useState("Processing your payment…");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -159,6 +160,7 @@ export default function Settings() {
       }
       setPreviewNumber(result.phoneNumber);
       setStep("preview");
+      getPaymentPrices().then(setPaymentPrices).catch(() => undefined);
     } catch (error) {
       setAvailabilityError((error as Error).message);
     } finally {
@@ -214,7 +216,13 @@ export default function Settings() {
     }, 3000);
   };
 
+  const displayedNumberPrice = paymentPrices?.ngn.number != null
+    ? `₦${paymentPrices.ngn.number.toLocaleString("en-US")}`
+    : "Loading current price…";
+  const ngnNumberPriceReady = currency !== "NGN" || paymentPrices?.ngn.number != null;
+
   const payWithFlutterwave = async () => {
+    if (!ngnNumberPriceReady) return;
     setPaying(true);
     try {
       const { orderId, url } = await createFlutterwaveCheckout(selectedCountry.value.toUpperCase(), currency);
@@ -463,12 +471,12 @@ export default function Settings() {
 
                 <CurrencySelector value={currency} onChange={setCurrency} disabled={paying} />
 
-                <Pressable style={s.paymentOption} onPress={payWithFlutterwave} disabled={paying}>
+                <Pressable style={s.paymentOption} onPress={payWithFlutterwave} disabled={paying || !ngnNumberPriceReady}>
                   <View style={[s.paymentIcon, { backgroundColor: "#FFF0E0" }]}>
                     <Landmark size={19} color="#E17A2D" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.paymentLabel}>Pay in {currency} with Flutterwave</Text>
+                    <Text style={s.paymentLabel}>{currency === "NGN" ? `Pay ${displayedNumberPrice} in NGN` : "Pay in USD"} with Flutterwave</Text>
                     <Text style={s.paymentDetail}>Cards, bank transfer, mobile money</Text>
                   </View>
                   {paying ? <ActivityIndicator color="#E17A2D" /> : <ChevronRight size={18} color="#AAA6B7" />}

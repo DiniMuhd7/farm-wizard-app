@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { Check, ShieldCheck, Sparkles } from "lucide-react-native";
 import CurrencySelector from "@/components/CurrencySelector";
 import { AIRBUNDLES, formatAirbundleMinutes, formatAirbundlePrice, type AirbundleId } from "@/constants/airbundles";
-import { createAirbundleFlutterwaveCheckout, toPaymentInitError, waitForPaymentOutcome, type PaymentCurrency } from "@/services/payments";
+import { createAirbundleFlutterwaveCheckout, getPaymentPrices, toPaymentInitError, waitForPaymentOutcome, type PaymentCurrency, type PaymentPrices } from "@/services/payments";
 
 interface Props {
   // Whether the account currently has an active Airbundle (the account's
@@ -16,12 +16,23 @@ interface Props {
 export default function AirbundleCards({ isActive, onPurchased }: Props) {
   const [buying, setBuying] = useState(false);
   const [currency, setCurrency] = useState<PaymentCurrency>("USD");
+  const [prices, setPrices] = useState<PaymentPrices | null>(null);
   const [selectedId, setSelectedId] = useState<AirbundleId>(
     () => AIRBUNDLES.find((bundle) => bundle.popular)?.id ?? AIRBUNDLES[0].id,
   );
   const selected = AIRBUNDLES.find((bundle) => bundle.id === selectedId) ?? AIRBUNDLES[0];
+  const priceFor = (bundle: typeof selected) => currency === "NGN" && prices?.ngn.airbundles[bundle.id] != null
+    ? `₦${prices.ngn.airbundles[bundle.id].toLocaleString("en-US")}`
+    : currency === "NGN" ? "Loading current price…" : formatAirbundlePrice(bundle, currency);
+
+  useEffect(() => {
+    getPaymentPrices().then(setPrices).catch(() => undefined);
+  }, []);
+
+  const ngnPriceReady = currency !== "NGN" || prices?.ngn.airbundles[selected.id] != null;
 
   const buy = async () => {
+    if (!ngnPriceReady) return;
     setBuying(true);
     try {
       const { orderId, url } = await createAirbundleFlutterwaveCheckout(selected.id, currency);
@@ -75,7 +86,7 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
             <Pressable
               key={bundle.id}
               accessibilityRole="radio"
-              accessibilityLabel={`${formatAirbundleMinutes(bundle)}, ${formatAirbundlePrice(bundle, currency)}`}
+              accessibilityLabel={`${formatAirbundleMinutes(bundle)}, ${priceFor(bundle)}`}
               accessibilityState={{ selected: active, disabled: buying }}
               disabled={buying}
               onPress={() => setSelectedId(bundle.id)}
@@ -85,7 +96,7 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
                 <Text style={s.bundleMinutes}>{formatAirbundleMinutes(bundle)}</Text>
                 {bundle.popular && <Text style={s.bundlePopular}>Most popular</Text>}
               </View>
-              <Text style={s.bundlePrice}>{formatAirbundlePrice(bundle, currency)}</Text>
+              <Text style={s.bundlePrice}>{priceFor(bundle)}</Text>
             </Pressable>
           );
         })}
@@ -105,11 +116,11 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
       <CurrencySelector value={currency} onChange={setCurrency} disabled={buying} />
 
       <View style={s.upgradeRow}>
-        <Pressable style={s.upgradeBtn} disabled={buying} onPress={buy} accessibilityRole="button">
+        <Pressable style={s.upgradeBtn} disabled={buying || !ngnPriceReady} onPress={buy} accessibilityRole="button">
           {buying ? (
             <ActivityIndicator color="#FFF" size="small" />
           ) : (
-            <Text style={s.upgradeText}>Pay {formatAirbundlePrice(selected, currency)} with Flutterwave</Text>
+            <Text style={s.upgradeText}>Pay {priceFor(selected)} with Flutterwave</Text>
           )}
         </Pressable>
       </View>

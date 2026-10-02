@@ -2,6 +2,7 @@ const axios = require("axios");
 const crypto = require("crypto");
 const Order = require("../../models/Order");
 const { purchaseAndAssignNumber } = require("../numbers");
+const { usdToNgn, getUsdToNgnRate } = require("../../utils/fx");
 
 const COUNTRY_CODE = /^[A-Z]{2}$/;
 
@@ -14,6 +15,10 @@ const NUMBER_PRICE = {
   USD: Number(process.env.NUMBER_PRICE_USD_CENTS || 500) / 100, // $5.00 default
   NGN: Number(process.env.NUMBER_PRICE_NGN || 3000), // ₦3,000 default
 };
+
+// NGN prices below are fallbacks: when FX_RATE_URL is configured, the NGN
+// charge is the USD price converted at the current rate (see utils/fx.js),
+// and these fixed amounts are used only if the rate is unavailable.
 
 // Prepaid credit packs for the top-up flow. Keyed by a short id the mobile
 // app selects from (see constants/creditPacks.ts, which mirrors these exact
@@ -280,6 +285,12 @@ function resolveCurrency(currency) {
   return normalized;
 }
 
+// The amount to charge in `currency`: the USD price as-is, or the USD price
+// converted to naira at the current FX rate (fixed NGN fallback if none).
+async function priceIn(currency, usdAmount, fallbackNgn) {
+  return currency === "USD" ? usdAmount : usdToNgn(usdAmount, fallbackNgn);
+}
+
 function resolveCreditPack(packId) {
   const pack = CREDIT_PACKS[String(packId)];
   if (!pack) throw validationError("Choose a valid credits pack.");
@@ -299,7 +310,7 @@ function resolveAirbundle(bundleId) {
 async function createFlutterwaveCheckout(req, res, label, build) {
   try {
     const baseUrl = requireCheckoutConfiguration();
-    const { title, currency, amount, fields } = build();
+    const { title, currency, amount, fields } = await build();
 
     const order = await Order.create({
       user: req.user._id,
@@ -339,26 +350,44 @@ async function createFlutterwaveCheckout(req, res, label, build) {
   }
 }
 
+// GET /api/v1/payments/prices — the NGN price of every product exactly as
+// checkout would charge it right now, so the app displays the same amount
+// that's actually charged. `rate` is null when FX isn't available and the
+// fixed fallback prices are in effect.
+exports.getPrices = async (req, res) => {
+  const ngn = (usd, fallback) => usdToNgn(usd, fallback);
+  const entries = async (table, usdOf, fallbackOf) =>
+    Object.fromEntries(await Promise.all(Object.entries(table).map(async ([id, item]) => [id, await ngn(usdOf(item), fallbackOf(item))])));
+  return res.status(200).json({
+    rate: await getUsdToNgnRate(),
+    ngn: {
+      airbundles: await entries(AIRBUNDLES, (b) => b.priceUsd, (b) => b.priceNgn),
+      creditPacks: await entries(CREDIT_PACKS, (p) => p.priceUsdCents / 100, (p) => p.priceNgn),
+      number: await ngn(NUMBER_PRICE.USD, NUMBER_PRICE.NGN),
+    },
+  });
+};
+
 // POST /api/v1/payments/flutterwave/create-session  { countryCode, currency }
 exports.createFlutterwaveSession = (req, res) =>
-  createFlutterwaveCheckout(req, res, "Unable to create Flutterwave session:", () => {
+  createFlutterwaveCheckout(req, res, "Unable to create Flutterwave session:", async () => {
     const countryCode = String(req.body?.countryCode || "").toUpperCase();
     assertValidCountryCode(countryCode);
     const currency = resolveCurrency(req.body?.currency);
-    return { title: `9tel phone number (${countryCode})`, currency, amount: NUMBER_PRICE[currency], fields: { countryCode } };
+    return { title: `9tel phone number (${countryCode})`, currency, amount: await priceIn(currency, NUMBER_PRICE.USD, NUMBER_PRICE.NGN), fields: { countryCode } };
   });
 
 // POST /api/v1/payments/flutterwave/create-credits-session  { packId, currency }
 // Prepaid top-up — adds to creditsBalanceCents (see controllers/credits)
 // instead of provisioning a number; fulfilled by fulfillCreditsOrder.
 exports.createCreditsFlutterwaveSession = (req, res) =>
-  createFlutterwaveCheckout(req, res, "Unable to create Flutterwave credits session:", () => {
+  createFlutterwaveCheckout(req, res, "Unable to create Flutterwave credits session:", async () => {
     const pack = resolveCreditPack(req.body?.packId);
     const currency = resolveCurrency(req.body?.currency);
     return {
       title: "9tel Prepaid credits",
       currency,
-      amount: currency === "USD" ? pack.priceUsdCents / 100 : pack.priceNgn,
+      amount: await priceIn(currency, pack.priceUsdCents / 100, pack.priceNgn),
       fields: { kind: "credits", creditsCents: pack.creditsCents },
     };
   });
@@ -367,13 +396,13 @@ exports.createCreditsFlutterwaveSession = (req, res) =>
 // Airbundle — a selectable minute bundle with ad-free 9tel-to-9tel calling;
 // fulfilled by fulfillAirbundleOrder.
 exports.createAirbundleFlutterwaveSession = (req, res) =>
-  createFlutterwaveCheckout(req, res, "Unable to create Flutterwave Airbundle session:", () => {
+  createFlutterwaveCheckout(req, res, "Unable to create Flutterwave Airbundle session:", async () => {
     const bundle = resolveAirbundle(req.body?.bundleId);
     const currency = resolveCurrency(req.body?.currency);
     return {
       title: `9tel Airbundle (${bundle.minutes.toLocaleString("en-US")} minutes)`,
       currency,
-      amount: currency === "USD" ? bundle.priceUsd : bundle.priceNgn,
+      amount: await priceIn(currency, bundle.priceUsd, bundle.priceNgn),
       fields: { kind: "airbundle", bundleMinutes: bundle.minutes, premiumDays: AIRBUNDLE_PERIOD_DAYS },
     };
   });

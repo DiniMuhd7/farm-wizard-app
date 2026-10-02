@@ -7,6 +7,7 @@ const {
   createAirbundleFlutterwaveSession,
   flutterwaveWebhook,
   getOrderStatus,
+  getPrices,
   paymentReturnPage,
 } = require("../controllers/payments");
 
@@ -45,6 +46,7 @@ router.post("/flutterwave/create-airbundle-session", checkoutRateLimit, protect,
 // the controller's own comment), not a body signature, so it has no
 // special body-parsing requirement.
 router.post("/flutterwave/webhook", statusRateLimit, flutterwaveWebhook);
+router.get("/prices", statusRateLimit, protect, getPrices);
 router.get("/orders/:id", statusRateLimit, protect, getOrderStatus);
 router.get("/return", statusRateLimit, paymentReturnPage);
 

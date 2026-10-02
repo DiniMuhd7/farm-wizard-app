@@ -58,7 +58,8 @@ async function reserveForCall(userId, callSid) {
 // Settles the reservation made for `callSid` once Twilio reports how the
 // call ended, using Twilio's own status/duration. Idempotent: only a
 // reservation still held by this exact call sid is touched.
-// Returns "redeemed", "released", or null (this call held no reservation).
+// Returns "redeemed", "released", "replayed" (a redelivered event for a call
+// this reward was already redeemed by), or null (this call held no reservation).
 async function settleForCall(userId, callSid, { connected, durationSeconds }) {
   if (!callSid) return null;
   if (connected) {
@@ -68,7 +69,9 @@ async function settleForCall(userId, callSid, { connected, durationSeconds }) {
       { state: "redeemed", usedSeconds: used, redeemedAt: new Date(), redeemedCallSid: callSid },
       { new: true }
     );
-    return updated ? "redeemed" : null;
+    if (updated) return "redeemed";
+    const already = await WelcomeReward.findOne({ user: userId, state: "redeemed", redeemedCallSid: callSid }).lean();
+    return already ? "replayed" : null;
   }
   const released = await WelcomeReward.findOneAndUpdate(
     { user: userId, state: "reserved", reservedCallSid: callSid },
@@ -78,21 +81,51 @@ async function settleForCall(userId, callSid, { connected, durationSeconds }) {
   return released ? "released" : null;
 }
 
+// Maps a ledger row to what the app may show. A reservation older than the
+// TTL is treated as available again, exactly as reserveForCall would.
+function displayState(reward, now = Date.now()) {
+  if (reward.state === "redeemed") return { status: "redeemed", seconds: 0 };
+  const stale = reward.state === "reserved" && (!reward.reservedAt || new Date(reward.reservedAt).getTime() < now - RESERVATION_TTL_MS);
+  const seconds = Math.max(0, reward.grantedSeconds - (reward.usedSeconds || 0));
+  if (reward.state === "reserved" && !stale) return { status: "in_use", seconds };
+  return { status: "available", seconds };
+}
+
+// What the person can actually dial right now, derived server-side from the
+// reward and the purchased balance. Purchased credit is used first when the
+// balance covers a minute (see controllers/voice); the free minute is the
+// fallback when it does not.
+function effectiveAvailability(status, balanceCents) {
+  const { RATE_PER_MINUTE_CENTS } = require("../credits");
+  const freeMinute = status === "available" || status === "in_use";
+  const credits = (balanceCents || 0) >= RATE_PER_MINUTE_CENTS;
+  if (credits) return "credits";
+  return freeMinute ? "free_minute" : "none";
+}
+
 // GET /api/v1/rewards/welcome — read-only view for the app. Never trusted
 // by the backend for anything; eligibility is re-evaluated at call time.
+// The reward is its own entitlement: it is reported separately from the
+// purchased monetary balance and is never added to it.
 exports.getWelcomeReward = async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("isGuest verifiedCallerId").lean();
-    if (!user || user.isGuest) return res.status(200).json({ status: "unavailable", seconds: 0 });
-    if (!user.verifiedCallerId) return res.status(200).json({ status: "verify_phone", seconds: 0 });
+    res.set?.("Cache-Control", "no-store");
+    const user = await User.findById(req.user._id).select("isGuest verifiedCallerId creditsBalanceCents").lean();
+    const respondWith = (view) =>
+      res.status(200).json({
+        ...view,
+        grantedSeconds: view.status === "unavailable" || view.status === "verify_phone" ? 0 : WELCOME_SECONDS,
+        effectiveAvailability: effectiveAvailability(view.status, user?.creditsBalanceCents),
+      });
+    if (!user || user.isGuest) return respondWith({ status: "unavailable", seconds: 0 });
+    if (!user.verifiedCallerId) return respondWith({ status: "verify_phone", seconds: 0 });
     const reward = await ensureWelcomeReward(req.user._id);
     if (!reward) {
       // Ledger row exists for this phone under a different account, or the
       // account isn't eligible.
-      return res.status(200).json({ status: "unavailable", seconds: 0 });
+      return respondWith({ status: "unavailable", seconds: 0 });
     }
-    if (reward.state === "redeemed") return res.status(200).json({ status: "redeemed", seconds: 0 });
-    return res.status(200).json({ status: "available", seconds: reward.grantedSeconds - reward.usedSeconds });
+    return respondWith(displayState(reward));
   } catch (error) {
     console.error("Unable to load welcome reward:", error.message);
     return res.status(500).json({ message: "Unable to check your welcome reward right now." });
@@ -155,4 +188,4 @@ exports.WELCOME_SECONDS = WELCOME_SECONDS;
 exports.ensureWelcomeReward = ensureWelcomeReward;
 exports.reserveForCall = reserveForCall;
 exports.settleForCall = settleForCall;
-exports._private = { identityHash };
+exports._private = { identityHash, displayState, effectiveAvailability };

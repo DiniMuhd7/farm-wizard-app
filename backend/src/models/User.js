@@ -41,14 +41,22 @@ const userSchema = new mongoose.Schema(
     // ever using 9tel) — see controllers/callerid.
     verifiedCallerId: { type: String, unique: true, sparse: true },
     // Caller-ID verification is changed only by controllers/callerid. A
-    // pending attempt is bound to its requested number and signed Twilio
-    // callback token; failed/expired attempts can be retried but never dial
-    // using the unverified number.
+    // pending attempt is a server-side, one-time session bound to its
+    // requested number: a code spoken on the provider's possession call and
+    // entered in the app. Only a salted HMAC of the code is stored, never the
+    // code. Failed/expired attempts can be retried but never dial using the
+    // unverified number.
     callerIdStatus: { type: String, enum: ["unverified", "pending", "verified", "failed", "expired"], default: "unverified" },
-    callerIdVerificationMethod: { type: String, enum: ["twilio", "developer_test"], default: null },
+    callerIdVerificationMethod: { type: String, enum: ["twilio", "spoken_code", "developer_test"], default: null },
     callerIdVerificationNumber: { type: String, default: null },
     callerIdLastAttemptedNumber: { type: String, default: null },
-    callerIdVerificationTokenHash: { type: String, default: null },
+    callerIdVerificationCodeHash: { type: String, default: null },
+    // Random, non-secret id of the current session. Doubles as the
+    // correlation id in logs, responses and the provider status callback.
+    callerIdVerificationSessionId: { type: String, default: null },
+    callerIdVerificationAttempts: { type: Number, default: 0 },
+    callerIdVerificationCallSid: { type: String, default: null },
+    callerIdLastRequestedAt: { type: Date, default: null },
     callerIdVerificationExpiresAt: { type: Date, default: null },
     isPremium: { type: Boolean, default: false },
     premiumUntil: Date,

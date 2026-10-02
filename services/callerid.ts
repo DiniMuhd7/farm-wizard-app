@@ -7,17 +7,42 @@ export type CallerIdVerificationStatus = {
   verifiedCallerId: string | null;
   callerIdStatus: CallerIdStatus;
   phoneNumber?: string;
-  method?: "twilio" | "developer_test";
+  method?: "twilio" | "spoken_code" | "developer_test";
+  expiresAt?: string;
+  attemptsRemaining?: number;
+  correlationId?: string;
 };
 
 export type CallerIdVerificationStart = {
   phoneNumber: string;
   callerIdStatus: "pending" | "verified";
   method?: "developer_test";
-  validationCode?: string;
   expiresAt?: string;
+  correlationId?: string;
   message?: string;
 };
+
+export type CallerIdCodeResult = {
+  callerIdStatus: "verified";
+  verifiedCallerId: string;
+  method: "spoken_code";
+};
+
+export class CallerIdError extends Error {
+  code?: string;
+  missing?: string[];
+  attemptsRemaining?: number;
+  callerIdStatus?: CallerIdStatus;
+}
+
+function toError(data: any, fallback: string) {
+  const error = new CallerIdError(data?.message || fallback);
+  error.code = data?.code;
+  error.missing = data?.missing;
+  error.attemptsRemaining = data?.attemptsRemaining;
+  error.callerIdStatus = data?.callerIdStatus;
+  return error;
+}
 
 async function authHeader() {
   const token = await AsyncStorage.getItem("token");
@@ -36,13 +61,22 @@ export async function startCallerIdVerification(phoneNumber: string): Promise<Ca
     body: JSON.stringify({ phoneNumber }),
   });
   const data = await responseData(response);
-  if (!response.ok) {
-    const error = new Error(data?.message || "Unable to start verification right now.") as Error & { code?: string; missing?: string[] };
-    error.code = data?.code;
-    error.missing = data?.missing;
-    throw error;
-  }
+  if (!response.ok) throw toError(data, "Unable to start verification right now.");
   return data as CallerIdVerificationStart;
+}
+
+// The code is the one spoken on the verification call. It is sent only to the
+// authenticated backend, which is the sole authority on whether it is valid;
+// it is never stored, logged, or sent to analytics here.
+export async function submitCallerIdCode(code: string): Promise<CallerIdCodeResult> {
+  const response = await fetch(`${API_BASE}/api/v1/callerid/verify`, {
+    method: "POST",
+    headers: { ...(await authHeader()), "Content-Type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  const data = await responseData(response);
+  if (!response.ok) throw toError(data, "Unable to verify that code right now.");
+  return data as CallerIdCodeResult;
 }
 
 export async function getCallerIdVerificationStatus(): Promise<CallerIdVerificationStatus> {

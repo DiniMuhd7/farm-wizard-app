@@ -58,31 +58,46 @@ exports.issueToken = (req, res) => {
   }
 };
 
+function resolveCallerIdentity(caller) {
+  const verifiedIsAuthoritative =
+    caller?.verifiedCallerId &&
+    E164.test(caller.verifiedCallerId) &&
+    caller.callerIdStatus === "verified" &&
+    caller.callerIdVerificationMethod !== "developer_test";
+  if (verifiedIsAuthoritative) return { callerId: caller.verifiedCallerId, callerIdStatus: "verified" };
+  const fallback = process.env.TWILIO_CALLER_ID;
+  if (!fallback || !E164.test(fallback)) return null;
+  return { callerId: fallback, callerIdStatus: "unverified" };
+}
+
 exports.outgoingCallTwiML = async (req, res) => {
   if (!twilioRequestIsValid(req)) return res.status(403).type("text/plain").send("Invalid Twilio signature");
   const destination = String(req.body?.To || "").trim();
 
-  // Use the calling user's own verified phone number as their caller ID if
-  // they have one (see controllers/callerid — verified via a Twilio-placed
-  // phone call, the only way a non-Twilio-owned number is legitimately
-  // usable as an outbound caller ID), falling back to the single shared
-  // TWILIO_CALLER_ID for anyone who hasn't verified one yet.
+  // Caller identity is resolved server-side only. A user's own number is used
+  // as the outbound identity solely when Twilio's signed verification callback
+  // persisted it (callerIdStatus "verified"). Unverified, pending, failed,
+  // expired and developer-test numbers never become the From identity; those
+  // callers use the provider-owned TWILIO_CALLER_ID. Calls are never blocked
+  // merely because the caller ID is unverified.
   const from = String(req.body?.From || "");
   const callerMatch = from.match(/^client:user-([A-Za-z0-9]+)$/);
-  let callerId = process.env.TWILIO_CALLER_ID;
   let caller = null;
   if (callerMatch) {
     const User = require("../../models/User");
     caller = await User.findById(callerMatch[1])
       .select("verifiedCallerId callerIdStatus callerIdVerificationMethod phoneNumber isGuest")
       .lean();
-    const verifiedCallerIdIsAuthoritative =
-      caller?.verifiedCallerId &&
-      (caller.callerIdStatus === "verified" || !caller.callerIdStatus) &&
-      caller.callerIdVerificationMethod !== "developer_test";
-    if (verifiedCallerIdIsAuthoritative) callerId = caller.verifiedCallerId;
   }
-  if (!callerId || !E164.test(callerId)) return res.status(503).type("text/plain").send("Voice caller ID is not configured");
+  const callerIdentity = resolveCallerIdentity(caller);
+  if (!callerIdentity) {
+    console.error("Outbound call refused: no verified caller ID and TWILIO_CALLER_ID is missing or not E.164");
+    return res
+      .status(503)
+      .type("text/plain")
+      .send("Voice caller ID is not configured: set TWILIO_CALLER_ID to a Twilio-owned or Twilio-verified E.164 number so unverified accounts can place calls.");
+  }
+  const callerId = callerIdentity.callerId;
   const baseUrl = `${process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/v1/voice/outgoing/status`;
   const action = escapedXml(baseUrl);
 
@@ -336,4 +351,4 @@ exports.incomingDialStatus = async (req, res) => {
   return respondToDialOutcome(res, req.body?.DialCallStatus);
 };
 
-exports._private = { createVoiceAccessToken, isAllowedDestination };
+exports._private = { createVoiceAccessToken, isAllowedDestination, resolveCallerIdentity };

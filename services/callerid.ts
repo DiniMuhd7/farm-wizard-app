@@ -14,6 +14,8 @@ export type CallerIdVerificationStart = {
   phoneNumber: string;
   callerIdStatus: "pending" | "verified";
   method?: "developer_test";
+  validationCode?: string;
+  expiresAt?: string;
   message?: string;
 };
 

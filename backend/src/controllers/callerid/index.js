@@ -146,13 +146,15 @@ exports.startVerification = async (req, res) => {
       return res.status(409).json({ code: "verification_pending", message: "Cancel or finish the current verification before starting another." });
     }
 
+    let validationCode;
     try {
       const callbackUrl = `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/callerid/callback?token=${callbackToken}`;
-      await twilioClient().validationRequests.create({
+      const validation = await twilioClient().validationRequests.create({
         phoneNumber,
         friendlyName: "9tel caller ID verification",
         statusCallback: callbackUrl,
       });
+      validationCode = validation?.validationCode;
     } catch (error) {
       await User.findOneAndUpdate(
         { _id: req.user._id, callerIdStatus: "pending", callerIdVerificationTokenHash: tokenHash },
@@ -168,10 +170,18 @@ exports.startVerification = async (req, res) => {
       return res.status(failure.status).json({ code: failure.code, message: failure.message });
     }
 
+    // Twilio's call asks the user to key in this code, and it is only ever
+    // returned in this create response. It is relayed once to the authenticated
+    // owner for display, never stored or logged, and must not be cached.
+    res.set?.("Cache-Control", "no-store");
     return res.status(200).json({
       phoneNumber,
       callerIdStatus: "pending",
-      message: `We’re calling ${phoneNumber}. Answer and enter the spoken code on your phone keypad.`,
+      ...(validationCode ? { validationCode: String(validationCode) } : {}),
+      expiresAt: expiresAt.toISOString(),
+      message: validationCode
+        ? `We’re calling ${phoneNumber}. Answer and enter the code shown on screen on your phone keypad.`
+        : `We’re calling ${phoneNumber}. Answer and follow the spoken instructions.`,
     });
   } catch (error) {
     console.error("Unable to start caller ID verification", { code: error.code || null });

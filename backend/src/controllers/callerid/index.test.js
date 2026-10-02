@@ -1,8 +1,10 @@
 const crypto = require("crypto");
 
 const mockValidationRequestsCreate = jest.fn();
+const mockOutgoingCallerIdsList = jest.fn();
 jest.mock("twilio", () => jest.fn(() => ({
   validationRequests: { create: mockValidationRequestsCreate },
+  outgoingCallerIds: { list: mockOutgoingCallerIdsList },
 })));
 jest.mock("../../models/User", () => ({
   findOne: jest.fn(),
@@ -57,6 +59,7 @@ describe("callerid controller", () => {
     User.findById.mockReset();
     User.findOneAndUpdate.mockReset().mockResolvedValue({ _id: "u1" });
     mockValidationRequestsCreate.mockReset().mockResolvedValue({});
+    mockOutgoingCallerIdsList.mockReset().mockResolvedValue([]);
     twilioSignature.twilioRequestIsValid.mockReset().mockReturnValue(true);
     rewards.ensureWelcomeReward.mockReset();
     callerid = require("./index");
@@ -336,6 +339,52 @@ describe("callerid controller", () => {
       expect(User.findOneAndUpdate).toHaveBeenCalledTimes(2);
       expect(rewards.ensureWelcomeReward).toHaveBeenCalledTimes(1);
       expect(replay.statusCode).toBe(200);
+    });
+  });
+
+  describe("status reconciliation with Twilio", () => {
+    const tokenHash = "d".repeat(64);
+    const pendingUser = (expiresAt) => ({
+      _id: "u1",
+      callerIdStatus: "pending",
+      callerIdVerificationNumber: phoneNumber,
+      callerIdVerificationTokenHash: tokenHash,
+      callerIdVerificationExpiresAt: expiresAt,
+    });
+    const run = async (user) => {
+      User.findById.mockReturnValue({ select: async () => user });
+      const res = mockRes();
+      await callerid.getVerificationStatus({ user: { _id: "u1" } }, res);
+      return res;
+    };
+
+    it("completes a pending attempt Twilio confirms even when the callback was lost", async () => {
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+      mockOutgoingCallerIdsList.mockResolvedValue([{ phoneNumber, dateCreated: new Date() }]);
+      User.findOneAndUpdate.mockResolvedValue({ _id: "u1", verifiedCallerId: phoneNumber });
+      const res = await run(pendingUser(expiresAt));
+      expect(res.body).toEqual({ verifiedCallerId: phoneNumber, callerIdStatus: "verified", method: "twilio" });
+      expect(User.findOneAndUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ callerIdStatus: "pending", callerIdVerificationTokenHash: tokenHash }),
+        expect.objectContaining({ callerIdStatus: "verified" }),
+        { new: true }
+      );
+      expect(rewards.ensureWelcomeReward).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not trust a caller ID that Twilio already listed before this attempt", async () => {
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+      mockOutgoingCallerIdsList.mockResolvedValue([{ phoneNumber, dateCreated: new Date(Date.now() - 86400000) }]);
+      const res = await run(pendingUser(expiresAt));
+      expect(res.body.callerIdStatus).toBe("pending");
+      expect(User.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it("stays pending when Twilio has no record or errors", async () => {
+      const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
+      expect((await run(pendingUser(expiresAt))).body.callerIdStatus).toBe("pending");
+      mockOutgoingCallerIdsList.mockRejectedValue(Object.assign(new Error("x"), { code: 20003 }));
+      expect((await run(pendingUser(expiresAt))).body.callerIdStatus).toBe("pending");
     });
   });
 });

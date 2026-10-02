@@ -22,6 +22,7 @@ export default function Settings() {
 
   const [callerId, setCallerId] = useState<string | null>(null);
   const [callerIdStatus, setCallerIdStatus] = useState<CallerIdStatus>("unverified");
+  const [callerIdMethod, setCallerIdMethod] = useState<string | undefined>();
   const [loadingCallerId, setLoadingCallerId] = useState(true);
 
   const { countries } = useCountryData();
@@ -53,8 +54,9 @@ export default function Settings() {
       .finally(() => setLoadingNumber(false));
     getCallerIdVerificationStatus()
       .then((status) => {
-        setCallerId(status.verifiedCallerId);
+        setCallerId(status.verifiedCallerId || (status.method === "developer_test" ? status.phoneNumber || null : null));
         setCallerIdStatus(status.callerIdStatus);
+        setCallerIdMethod(status.method);
       })
       .catch(() => {
         setCallerId(null);
@@ -310,8 +312,12 @@ export default function Settings() {
                 <ActivityIndicator size="small" color="#5147AF" />
               ) : callerId ? (
                 <>
-                  <Text style={s.rowLabel}>{callerId}</Text>
-                  <Text style={s.rowDetail}>Shown to people you call, instead of the shared number</Text>
+                  <Text style={s.rowLabel}>{callerIdMethod === "developer_test" ? `Test number · ${callerId}` : callerId}</Text>
+                  <Text style={s.rowDetail}>
+                    {callerIdMethod === "developer_test"
+                      ? "Synthetic local/test state; calls use the configured Twilio caller ID"
+                      : "Shown to people you call, instead of the shared number"}
+                  </Text>
                 </>
               ) : callerIdStatus === "pending" ? (
                 <>

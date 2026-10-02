@@ -10,14 +10,14 @@ The app never receives, displays, or logs the provider's validation code. The pe
 
 Configure these values in the **backend** environment (for example Render → the `ninetel-backend-api` service → Environment):
 
-1. `TWILIO_ACCOUNT_SID` — the account that owns the Twilio Voice application.
+1. `TWILIO_ACCOUNT_SID` — the Twilio account SID used by the backend.
 2. `TWILIO_AUTH_TOKEN` — that account's Auth Token; keep it server-side.
-3. `PUBLIC_BASE_URL` — the public HTTPS backend origin, with no trailing slash.
-4. `TWILIO_CALLER_ID` — an E.164 number owned by the Twilio account; used when a user has no provider-verified caller ID.
+3. `PUBLIC_BASE_URL` — the public HTTPS backend origin, with no trailing slash. It must exactly match the externally visible host used for Twilio signature validation.
+4. `TWILIO_CALLER_ID` — an E.164 number owned by the Twilio account; required for outbound calls when a user has no provider-verified caller ID. It is not needed to initiate caller-ID verification itself.
 
-Set the Twilio account's Outgoing Caller ID validation for the target number to the 9tel verification flow. `PUBLIC_BASE_URL` must resolve publicly over HTTPS so Twilio can reach:
+Enable Twilio Voice calling permissions for the countries whose numbers users can verify. The backend submits Twilio's Outgoing Caller ID validation request; Twilio calls the submitted number and sends its result to the callback URL supplied with that request. No separate callback URL registration in the Twilio console is needed. `PUBLIC_BASE_URL` must resolve publicly over HTTPS so Twilio can reach:
 
-`https://<your-backend-origin>/api/v1/callerid/callback`
+`https://<your-backend-origin>/api/v1/callerid/callback?token=<per-attempt-token>`
 
 The callback URL is generated per attempt and includes an unguessable correlation token. Do not put Twilio credentials or validation codes in the mobile app or client-visible configuration. A missing required setting returns `caller_id_configuration_error` with missing setting **names only**; provider failures return a separate safe code and actionable message.
 
@@ -32,7 +32,7 @@ CALLER_ID_DEV_TEST_MODE=true
 CALLER_ID_DEV_TEST_NUMBERS=+15555550100
 ```
 
-Replace the sample with a reserved/non-routable E.164 fixture used only in an isolated local/test database. Sign in to the app, open **Settings → Your Caller ID → Verify**, and submit that exact allowlisted number. The server associates the synthetic test state with the authenticated account; there is no client-supplied verification result. No provider call is made. The number is marked `developer_test` for UI/testing, and outbound calls continue to use the configured Twilio-owned `TWILIO_CALLER_ID`, never that synthetic number.
+Replace the sample with a reserved/non-routable E.164 fixture used only in an isolated local/test database. Sign in to the app, open **Settings → Your Caller ID → Verify**, and submit that exact allowlisted number. The server associates the synthetic test state with the authenticated account; there is no client-supplied verification result. No provider call is made. The server records the `developer_test` method separately and does not store the fixture as a real `verifiedCallerId`; outbound calls continue to use the configured Twilio-owned `TWILIO_CALLER_ID`, never that synthetic number.
 
 This mode is unsuitable for proving real ownership or testing live caller-ID presentation. For provider integration tests, omit both developer test settings and configure the real Twilio values above. Keep test accounts/database isolated from production.
 

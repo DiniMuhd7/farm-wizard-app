@@ -85,9 +85,12 @@ describe("callerid controller", () => {
       expect(User.findOneAndUpdate).toHaveBeenCalledWith(
         { _id: "u1", callerIdStatus: { $ne: "pending" } },
         expect.objectContaining({
-          callerIdStatus: "pending",
-          callerIdVerificationNumber: phoneNumber,
-          callerIdVerificationTokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          $set: expect.objectContaining({
+            callerIdStatus: "pending",
+            callerIdVerificationNumber: phoneNumber,
+            callerIdVerificationTokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+          }),
+          $unset: { verifiedCallerId: "" },
         }),
         { new: true }
       );
@@ -140,9 +143,12 @@ describe("callerid controller", () => {
       expect(User.findOneAndUpdate).toHaveBeenCalledWith(
         { _id: "u1", callerIdStatus: { $ne: "pending" } },
         expect.objectContaining({
-          verifiedCallerId: phoneNumber,
-          callerIdStatus: "verified",
-          callerIdVerificationMethod: "developer_test",
+          $set: expect.objectContaining({
+            callerIdStatus: "verified",
+            callerIdVerificationMethod: "developer_test",
+            callerIdLastAttemptedNumber: phoneNumber,
+          }),
+          $unset: { verifiedCallerId: "" },
         }),
         { new: true }
       );
@@ -159,6 +165,38 @@ describe("callerid controller", () => {
       expect(res.body.method).toBeUndefined();
       expect(mockValidationRequestsCreate).toHaveBeenCalled();
     });
+
+    it("requires exact developer allowlisting before using the local shortcut", async () => {
+      process.env.CALLER_ID_DEV_TEST_MODE = "true";
+      process.env.CALLER_ID_DEV_TEST_NUMBERS = "+15550000000";
+      process.env.TWILIO_AUTH_TOKEN = "";
+      const res = mockRes();
+      await callerid.startVerification({ user: { _id: "u1" }, body: { phoneNumber } }, res);
+
+      expect(res.statusCode).toBe(503);
+      expect(res.body.code).toBe("caller_id_configuration_error");
+      expect(User.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(mockValidationRequestsCreate).not.toHaveBeenCalled();
+    });
+
+    it("returns a safe provider-specific error and persists failure", async () => {
+      const providerFailure = new Error("provider internal details");
+      providerFailure.code = "21408";
+      mockValidationRequestsCreate.mockRejectedValue(providerFailure);
+      const res = mockRes();
+      await callerid.startVerification({ user: { _id: "u1" }, body: { phoneNumber } }, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        code: "country_not_enabled",
+        message: "Calling this country is not enabled for verification. Contact support.",
+      });
+      expect(JSON.stringify(res.body)).not.toContain("provider internal details");
+      expect(User.findOneAndUpdate).toHaveBeenCalledWith(
+        { _id: "u1", callerIdStatus: "pending", callerIdVerificationTokenHash: expect.any(String) },
+        expect.objectContaining({ callerIdStatus: "failed" })
+      );
+    });
   });
 
   describe("getVerificationStatus", () => {
@@ -168,6 +206,7 @@ describe("callerid controller", () => {
           verifiedCallerId: null,
           callerIdStatus: "pending",
           callerIdVerificationNumber: phoneNumber,
+          callerIdLastAttemptedNumber: phoneNumber,
           callerIdVerificationExpiresAt: new Date(Date.now() + 60_000),
         }),
       });
@@ -185,12 +224,14 @@ describe("callerid controller", () => {
           callerIdVerificationExpiresAt: new Date(Date.now() - 1),
         }),
       });
+      User.findOneAndUpdate.mockResolvedValueOnce({ callerIdLastAttemptedNumber: phoneNumber });
       const res = mockRes();
       await callerid.getVerificationStatus({ user: { _id: "u1" } }, res);
-      expect(res.body).toEqual({ verifiedCallerId: null, callerIdStatus: "expired" });
+      expect(res.body).toEqual({ verifiedCallerId: null, callerIdStatus: "expired", phoneNumber });
       expect(User.findOneAndUpdate).toHaveBeenCalledWith(
         expect.objectContaining({ _id: "u1", callerIdStatus: "pending" }),
-        expect.objectContaining({ callerIdStatus: "expired" })
+        expect.objectContaining({ callerIdStatus: "expired" }),
+        { new: true }
       );
     });
 
@@ -199,6 +240,21 @@ describe("callerid controller", () => {
       await callerid.getVerificationStatus({}, res);
       expect(res.statusCode).toBe(401);
       expect(User.findById).not.toHaveBeenCalled();
+    });
+
+    it("does not recognize synthetic developer verification in production", async () => {
+      process.env.NODE_ENV = "production";
+      User.findById.mockReturnValue({
+        select: () => Promise.resolve({
+          verifiedCallerId: null,
+          callerIdStatus: "verified",
+          callerIdVerificationMethod: "developer_test",
+          callerIdLastAttemptedNumber: phoneNumber,
+        }),
+      });
+      const res = mockRes();
+      await callerid.getVerificationStatus({ user: { _id: "u1" } }, res);
+      expect(res.body).toEqual({ verifiedCallerId: null, callerIdStatus: "unverified" });
     });
   });
 
@@ -263,6 +319,19 @@ describe("callerid controller", () => {
         expect.objectContaining({ callerIdStatus: "failed", callerIdVerificationTokenHash: null })
       );
       expect(res.statusCode).toBe(200);
+    });
+
+    it("does not advance state or repeat side effects when a success callback is replayed", async () => {
+      const token = "c".repeat(64);
+      User.findOneAndUpdate.mockResolvedValueOnce({ _id: "u1" }).mockResolvedValueOnce(null);
+      const request = { query: { token }, body: { PhoneNumber: phoneNumber, VerificationStatus: "success" } };
+      await callerid.verificationCallback(request, mockRes());
+      const replay = mockRes();
+      await callerid.verificationCallback(request, replay);
+
+      expect(User.findOneAndUpdate).toHaveBeenCalledTimes(2);
+      expect(rewards.ensureWelcomeReward).toHaveBeenCalledTimes(1);
+      expect(replay.statusCode).toBe(200);
     });
   });
 });

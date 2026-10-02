@@ -47,6 +47,7 @@ const userSchema = new mongoose.Schema(
     callerIdStatus: { type: String, enum: ["unverified", "pending", "verified", "failed", "expired"], default: "unverified" },
     callerIdVerificationMethod: { type: String, enum: ["twilio", "developer_test"], default: null },
     callerIdVerificationNumber: { type: String, default: null },
+    callerIdLastAttemptedNumber: { type: String, default: null },
     callerIdVerificationTokenHash: { type: String, default: null },
     callerIdVerificationExpiresAt: { type: Date, default: null },
     isPremium: { type: Boolean, default: false },

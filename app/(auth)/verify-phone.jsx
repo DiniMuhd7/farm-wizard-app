@@ -13,7 +13,7 @@ const RESEND_COOLDOWN_SECONDS = 30;
 
 const STEPS = [
   { id: "number", label: "Enter number" },
-  { id: "code", label: "Answer call" },
+  { id: "call", label: "Answer call" },
   { id: "done", label: "Confirmed" },
 ];
 
@@ -24,6 +24,7 @@ export default function VerifyPhone() {
   const [statusMessage, setStatusMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [verifiedNumber, setVerifiedNumber] = useState("");
+  const [verificationMethod, setVerificationMethod] = useState("twilio");
   const [resendCooldown, setResendCooldown] = useState(0);
   const pollRef = useRef(null);
   const pollDeadlineRef = useRef(0);
@@ -80,6 +81,7 @@ export default function VerifyPhone() {
         if (status.callerIdStatus === "verified" && status.verifiedCallerId === expectedNumber) {
           stopPolling();
           setVerifiedNumber(status.verifiedCallerId);
+          setVerificationMethod(status.method || "twilio");
           setVerificationState("success");
           setError("");
           setStatusMessage("Your verified caller ID is ready. Future outbound calls can show this number.");
@@ -110,12 +112,18 @@ export default function VerifyPhone() {
           setVerificationState("calling");
           setStatusMessage(`We’re calling ${status.phoneNumber}. Answer and enter the spoken code on your phone keypad.`);
           startPolling(status.phoneNumber);
-        } else if (status.callerIdStatus === "verified" && status.verifiedCallerId) {
-          setPhoneNumber(status.verifiedCallerId);
-          setVerifiedNumber(status.verifiedCallerId);
+        } else if (
+          status.callerIdStatus === "verified" &&
+          (status.verifiedCallerId || (status.method === "developer_test" && status.phoneNumber))
+        ) {
+          const verifiedNumber = status.verifiedCallerId || status.phoneNumber;
+          setPhoneNumber(verifiedNumber);
+          setVerifiedNumber(verifiedNumber);
+          setVerificationMethod(status.method || "twilio");
           setVerificationState("success");
           setStatusMessage("Your verified caller ID is ready. Future outbound calls can show this number.");
         } else if (status.callerIdStatus === "failed" || status.callerIdStatus === "expired") {
+          if (status.phoneNumber) setPhoneNumber(status.phoneNumber);
           setVerificationState("failed");
           setError(status.callerIdStatus === "expired"
             ? "This verification attempt expired. Request another call to try again."
@@ -144,6 +152,7 @@ export default function VerifyPhone() {
       setPhoneNumber(trimmed);
       if (result.callerIdStatus === "verified") {
         setVerifiedNumber(trimmed);
+        setVerificationMethod(result.method || "twilio");
         setVerificationState("success");
         setStatusMessage(result.message || "Developer test verification completed. No provider call was placed.");
       } else {
@@ -348,9 +357,13 @@ export default function VerifyPhone() {
               <View style={styles.successIcon}>
                 <ShieldCheck size={28} color="#1E7A4D" />
               </View>
-              <Text style={styles.successTitle}>Number verified</Text>
+              <Text style={styles.successTitle}>
+                {verificationMethod === "developer_test" ? "Developer test complete" : "Number verified"}
+              </Text>
               <Text style={styles.successBody}>
-                {verifiedNumber || phoneNumber} is now ready to use as your caller ID when supported by the service.
+                {verificationMethod === "developer_test"
+                  ? `${verifiedNumber || phoneNumber} is allowlisted for this local/test run. Outbound calls continue to use the configured Twilio caller ID.`
+                  : `${verifiedNumber || phoneNumber} is now ready to use as your caller ID when supported by the service.`}
               </Text>
 
               <View style={[styles.statusCard, styles.statusSuccess]}>

@@ -101,10 +101,13 @@ exports.startVerification = async (req, res) => {
       const result = await User.findOneAndUpdate(
         { _id: req.user._id, callerIdStatus: { $ne: "pending" } },
         {
-          verifiedCallerId: phoneNumber,
-          callerIdStatus: "verified",
-          callerIdVerificationMethod: "developer_test",
-          ...clearPendingVerification(),
+          $set: {
+            callerIdStatus: "verified",
+            callerIdVerificationMethod: "developer_test",
+            callerIdLastAttemptedNumber: phoneNumber,
+            ...clearPendingVerification(),
+          },
+          $unset: { verifiedCallerId: "" },
         },
         { new: true }
       );
@@ -127,12 +130,15 @@ exports.startVerification = async (req, res) => {
     const pending = await User.findOneAndUpdate(
       { _id: req.user._id, callerIdStatus: { $ne: "pending" } },
       {
-        verifiedCallerId: null,
-        callerIdStatus: "pending",
-        callerIdVerificationMethod: null,
-        callerIdVerificationNumber: phoneNumber,
-        callerIdVerificationTokenHash: tokenHash,
-        callerIdVerificationExpiresAt: expiresAt,
+        $set: {
+          callerIdStatus: "pending",
+          callerIdVerificationMethod: null,
+          callerIdLastAttemptedNumber: phoneNumber,
+          callerIdVerificationNumber: phoneNumber,
+          callerIdVerificationTokenHash: tokenHash,
+          callerIdVerificationExpiresAt: expiresAt,
+        },
+        $unset: { verifiedCallerId: "" },
       },
       { new: true }
     );
@@ -178,13 +184,19 @@ exports.getVerificationStatus = async (req, res) => {
   if (!isOwner(req)) return res.status(401).json({ code: "unauthorized", message: "Sign in to check caller ID status." });
 
   const user = await User.findById(req.user._id).select(
-    "verifiedCallerId callerIdStatus callerIdVerificationMethod callerIdVerificationNumber callerIdVerificationExpiresAt"
+    "verifiedCallerId callerIdStatus callerIdVerificationMethod callerIdVerificationNumber callerIdLastAttemptedNumber callerIdVerificationExpiresAt"
   );
   if (user?.callerIdStatus === "pending") {
     const expiry = user.callerIdVerificationExpiresAt ? new Date(user.callerIdVerificationExpiresAt).getTime() : 0;
     if (expiry <= Date.now()) {
       const expired = await expirePendingVerification(req.user._id);
-      if (expired) return res.status(200).json({ verifiedCallerId: null, callerIdStatus: "expired" });
+      if (expired) {
+        return res.status(200).json({
+          verifiedCallerId: null,
+          callerIdStatus: "expired",
+          ...(expired.callerIdLastAttemptedNumber ? { phoneNumber: expired.callerIdLastAttemptedNumber } : {}),
+        });
+      }
       const current = await User.findById(req.user._id).select("verifiedCallerId callerIdStatus");
       return res.status(200).json({
         verifiedCallerId: current?.callerIdStatus === "verified" ? current.verifiedCallerId || null : null,
@@ -193,12 +205,24 @@ exports.getVerificationStatus = async (req, res) => {
     }
   }
 
-  const callerIdStatus = user?.callerIdStatus || (user?.verifiedCallerId ? "verified" : "unverified");
+  const isProductionTestRecord =
+    process.env.NODE_ENV === "production" && user?.callerIdVerificationMethod === "developer_test";
+  const callerIdStatus = isProductionTestRecord
+    ? "unverified"
+    : user?.callerIdStatus || (user?.verifiedCallerId ? "verified" : "unverified");
+  const method = user?.callerIdVerificationMethod || (callerIdStatus === "verified" ? "twilio" : undefined);
   return res.status(200).json({
-    verifiedCallerId: callerIdStatus === "verified" ? user?.verifiedCallerId || null : null,
+    verifiedCallerId: callerIdStatus === "verified" && method !== "developer_test" ? user?.verifiedCallerId || null : null,
     callerIdStatus,
+    ...(callerIdStatus === "verified" && method ? { method } : {}),
+    ...(callerIdStatus === "verified" && method === "developer_test" && user?.callerIdLastAttemptedNumber
+      ? { phoneNumber: user.callerIdLastAttemptedNumber }
+      : {}),
     ...(callerIdStatus === "pending" && user?.callerIdVerificationNumber
       ? { phoneNumber: user.callerIdVerificationNumber }
+      : {}),
+    ...(["failed", "expired"].includes(callerIdStatus) && user?.callerIdLastAttemptedNumber
+      ? { phoneNumber: user.callerIdLastAttemptedNumber }
       : {}),
   });
 };

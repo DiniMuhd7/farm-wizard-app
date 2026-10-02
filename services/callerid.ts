@@ -7,6 +7,7 @@ export type CallerIdVerificationStatus = {
   verifiedCallerId: string | null;
   callerIdStatus: CallerIdStatus;
   phoneNumber?: string;
+  method?: "twilio" | "developer_test";
 };
 
 export type CallerIdVerificationStart = {

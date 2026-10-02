@@ -5,7 +5,7 @@ import { CheckCircle2, CircleAlert, Gift, PhoneForwarded } from "lucide-react-na
 import CurrencySelector from "@/components/CurrencySelector";
 import { CREDIT_PACKS, formatCents, formatCreditPackPrice } from "@/constants/creditPacks";
 import { createCreditsFlutterwaveCheckout, getCreditsBalance, type CreditsBalance } from "@/services/credits";
-import { toPaymentInitError, waitForPaymentOutcome, type PaymentCurrency } from "@/services/payments";
+import { getPaymentPrices, toPaymentInitError, waitForPaymentOutcome, type PaymentCurrency, type PaymentPrices } from "@/services/payments";
 import { describeEffectiveAvailability, describeWelcomeReward, type WelcomeRewardStatus } from "@/services/rewards";
 
 interface Props {
@@ -24,6 +24,7 @@ export default function PrepaidCard({ welcomeReward, welcomeRewardLoading = fals
   const [loadError, setLoadError] = useState<string | null>(null);
   const [buyingPackId, setBuyingPackId] = useState<string | null>(null);
   const [currency, setCurrency] = useState<PaymentCurrency>("USD");
+  const [prices, setPrices] = useState<PaymentPrices | null>(null);
 
   const loadBalance = () => {
     setLoadError(null);
@@ -34,9 +35,15 @@ export default function PrepaidCard({ welcomeReward, welcomeRewardLoading = fals
 
   useEffect(() => {
     loadBalance();
+    getPaymentPrices().then(setPrices).catch(() => undefined);
   }, []);
 
+  const priceFor = (pack: (typeof CREDIT_PACKS)[number]) => currency === "NGN" && prices?.ngn.creditPacks[pack.id] != null
+    ? `₦${prices.ngn.creditPacks[pack.id].toLocaleString("en-US")}`
+    : currency === "NGN" ? "Loading current price…" : formatCreditPackPrice(pack, currency);
+
   const buy = async (packId: string) => {
+    if (currency === "NGN" && prices?.ngn.creditPacks[packId] == null) return;
     setBuyingPackId(packId);
     try {
       const { orderId, url } = await createCreditsFlutterwaveCheckout(packId, currency);
@@ -131,13 +138,13 @@ export default function PrepaidCard({ welcomeReward, welcomeRewardLoading = fals
             <View style={s.packActions}>
               <Pressable
                 style={s.packBtn}
-                disabled={buyingPackId !== null}
+                disabled={buyingPackId !== null || (currency === "NGN" && prices?.ngn.creditPacks[pack.id] == null)}
                 onPress={() => buy(pack.id)}
               >
                 {buyingPackId === pack.id ? (
                   <ActivityIndicator color="#FFF" size="small" />
                 ) : (
-                  <Text style={s.packBtnText}>{formatCreditPackPrice(pack, currency)}</Text>
+                  <Text style={s.packBtnText}>{priceFor(pack)}</Text>
                 )}
               </Pressable>
             </View>

@@ -430,7 +430,6 @@ const s = StyleSheet.create({
     borderWidth: 7,
     borderColor: "rgba(255,255,255,.13)",
   },
-  number: { color: "#85829B", fontFamily: "Poppins-Regular", fontSize: 12, marginTop: 2 },
   initial: { fontSize: 58, color: "#6A3156", fontFamily: "Poppins-SemiBold" },
   name: { color: "#FFF", fontSize: 27, fontFamily: "Poppins-SemiBold", marginTop: 24 },
   number: { color: "#D0CCFC", fontSize: 13, fontFamily: "Poppins-Regular", marginTop: 3 },

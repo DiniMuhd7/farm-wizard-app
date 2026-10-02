@@ -17,22 +17,44 @@ const benefits = [
   { title: "Keep track of calls", detail: "Review recent incoming, outgoing, and missed calls.", Icon: Clock3 },
 ];
 
+const tabs = [
+  { id: "free", label: "Free" },
+  { id: "premium", label: "Premium" },
+  { id: "payg", label: "Pay As You Go" },
+] as const;
+
+type PlanTab = typeof tabs[number]["id"];
+
 export default function CallingPlan() {
   const { user, setUser } = useLoginContext();
   const regionalPlans = useMemo(() => getCallingPlansForCountry(user?.country), [user?.country]);
   const [welcome, setWelcome] = useState<WelcomeRewardStatus | null>(null);
+  const [welcomeLoading, setWelcomeLoading] = useState(true);
+  const [selectedTab, setSelectedTab] = useState<PlanTab>(user?.isPremium ? "premium" : "free");
+  const [selectedTierId, setSelectedTierId] = useState<string | null>(
+    () => regionalPlans?.tiers.find((tier) => tier.popular)?.id ?? regionalPlans?.tiers[0]?.id ?? null,
+  );
+
+  useEffect(() => {
+    setSelectedTierId(
+      regionalPlans?.tiers.find((tier) => tier.popular)?.id ?? regionalPlans?.tiers[0]?.id ?? null,
+    );
+  }, [regionalPlans]);
+
   useEffect(() => {
     let cancelled = false;
-    getWelcomeReward().then((value) => {
-      if (!cancelled) setWelcome(value);
-    });
+    setWelcomeLoading(true);
+    getWelcomeReward()
+      .then((value) => {
+        if (!cancelled) setWelcome(value);
+      })
+      .finally(() => {
+        if (!cancelled) setWelcomeLoading(false);
+      });
     return () => {
       cancelled = true;
     };
   }, []);
-  const [selectedTierId, setSelectedTierId] = useState<string | null>(
-    () => regionalPlans?.tiers.find((tier) => tier.popular)?.id ?? regionalPlans?.tiers[0]?.id ?? null,
-  );
 
   return (
     <SafeAreaView style={s.safe} edges={["top"]}>
@@ -40,47 +62,107 @@ export default function CallingPlan() {
         <Pressable accessibilityLabel="Go back" onPress={() => router.back()} style={s.back}>
           <ChevronLeft size={23} color="#211B59" />
         </Pressable>
+
         <Text style={s.eyebrow}>YOUR ACCOUNT</Text>
         <Text style={s.title}>Calling plan</Text>
-        <Text style={s.sub}>Everything you need to make 9tel calls work for you.</Text>
+        <Text style={s.sub}>Choose the calling experience that matches who you call, what you pay for, and what is already active on your account.</Text>
 
-        <View style={s.card} accessible accessibilityRole="summary">
+        <View style={s.heroCard} accessible accessibilityRole="summary">
           <View style={s.badge}><Sparkles size={17} color="#DCD8FF" /><Text style={s.badgeText}>9TEL CALLING</Text></View>
-          <Text style={s.plan}>Pick how you want to call</Text>
-          <Text style={s.copy}>Calls to other 9tel users are free. Calls to mobile networks use prepaid credit — you only pay for what you use.</Text>
+          <Text style={s.plan}>Choose by destination, not guesswork</Text>
+          <Text style={s.copy}>Free and Premium are for 9tel-to-9tel calls. Pay As You Go is only for local-carrier calls, and balances or upgrades never show as confirmed until the server says they are.</Text>
         </View>
 
-        <Text style={s.heading}>HOW EACH CALL IS CHARGED</Text>
-        <View style={s.compare}>
-          <View style={s.compareCol}>
-            <View style={s.icon}><Users size={17} color="#5147AF" /></View>
-            <Text style={s.rowTitle}>9tel → 9tel</Text>
-            <Text style={s.rowText}>Free with ads, or ad-free with Premium.</Text>
-          </View>
-          <View style={s.compareCol}>
-            <View style={s.icon}><PhoneCall size={17} color="#5147AF" /></View>
-            <Text style={s.rowTitle}>9tel → mobile</Text>
-            <Text style={s.rowText}>Pay As You Go credit, billed per minute.</Text>
-          </View>
+        <View style={s.segmentedWrap} accessibilityRole="tablist">
+          {tabs.map((tab) => {
+            const active = selectedTab === tab.id;
+            return (
+              <Pressable
+                key={tab.id}
+                accessibilityRole="tab"
+                accessibilityLabel={tab.label}
+                accessibilityState={{ selected: active }}
+                onPress={() => setSelectedTab(tab.id)}
+                style={[s.segmentedTab, active && s.segmentedTabActive]}
+              >
+                <Text style={[s.segmentedText, active && s.segmentedTextActive]}>{tab.label}</Text>
+              </Pressable>
+            );
+          })}
         </View>
 
-        {welcome?.status === "available" && (
-          <View style={s.reward} accessible accessibilityLabel="Welcome gift: one free minute to a mobile number">
-            <Gift size={20} color="#2E7D5B" />
-            <Text style={s.rewardText}>
-              <Text style={s.rewardStrong}>Welcome gift: </Text>
-              your first {Math.max(1, Math.round(welcome.seconds / 60))} minute to a mobile number is on us. One-time, applied automatically.
-            </Text>
-          </View>
+        {selectedTab === "free" && (
+          <>
+            <View style={s.summaryCard}>
+              <View style={s.summaryIcon}><Users size={18} color="#5147AF" /></View>
+              <View style={s.summaryCopy}>
+                <Text style={s.summaryTitle}>Free plan eligibility</Text>
+                <Text style={s.summaryText}>Applies only when both sides of the call are 9tel users. Rewarded ads play before and after each eligible call unless your account already has Premium.</Text>
+              </View>
+            </View>
+            <NineTelPlanCards
+              plan="free"
+              isPremium={user?.isPremium === true}
+              onUpgraded={() => setUser((current: any) => (current ? { ...current, isPremium: true } : current))}
+            />
+          </>
         )}
-        {welcome?.status === "verify_phone" && (
-          <Pressable style={s.reward} accessibilityRole="button" onPress={() => router.push("/(tabs)/(sub-tabs)/settings")}>
-            <Gift size={20} color="#2E7D5B" />
-            <Text style={s.rewardText}>
-              <Text style={s.rewardStrong}>Get 1 free minute to a mobile number. </Text>
-              Verify your phone number to unlock it — one per person.
-            </Text>
-          </Pressable>
+
+        {selectedTab === "premium" && (
+          <>
+            <View style={s.summaryCard}>
+              <View style={s.summaryIcon}><ShieldCheck size={18} color="#5147AF" /></View>
+              <View style={s.summaryCopy}>
+                <Text style={s.summaryTitle}>Premium eligibility</Text>
+                <Text style={s.summaryText}>Premium only affects 9tel-to-9tel calls. It removes the rewarded ads but does not add local-carrier minutes or credit by itself.</Text>
+              </View>
+            </View>
+            <NineTelPlanCards
+              plan="premium"
+              isPremium={user?.isPremium === true}
+              onUpgraded={() => setUser((current: any) => (current ? { ...current, isPremium: true } : current))}
+            />
+
+            {regionalPlans ? (
+              <>
+                <View style={s.inlineNote}>
+                  <Globe2 size={18} color="#5147AF" />
+                  <Text style={s.noteText}>
+                    Regional monthly bundles shown below remain available for supported countries. They are separate from Free vs Premium and still apply when adding a 9tel number in {regionalPlans.countryName}.
+                  </Text>
+                </View>
+                <CallingPlanTiers
+                  plans={regionalPlans}
+                  selectedTierId={selectedTierId}
+                  onSelect={setSelectedTierId}
+                />
+              </>
+            ) : (
+              <View style={s.inlineNote}>
+                <Globe2 size={18} color="#5147AF" />
+                <Text style={s.noteText}>
+                  Regional monthly bundles are currently listed only for users in the United States, United Kingdom, or Canada.
+                </Text>
+              </View>
+            )}
+          </>
+        )}
+
+        {selectedTab === "payg" && (
+          <>
+            <View style={s.summaryCard}>
+              <View style={s.summaryIcon}><Gift size={18} color="#5147AF" /></View>
+              <View style={s.summaryCopy}>
+                <Text style={s.summaryTitle}>Pay As You Go eligibility</Text>
+                <Text style={s.summaryText}>Use this only for calls from 9tel to local mobile carriers. New accounts may also have a one-minute welcome reward, depending on the verified-phone status the server reports.</Text>
+              </View>
+            </View>
+            <PayAsYouGoCard
+              welcomeReward={welcome}
+              welcomeRewardLoading={welcomeLoading}
+              onVerifyPhone={() => router.push("/verify-phone")}
+            />
+          </>
         )}
 
         <View style={s.headingRow}>
@@ -99,25 +181,6 @@ export default function CallingPlan() {
             </View>
           ))}
         </View>
-        <View style={s.note}>
-          <ShieldCheck size={19} color="#5147AF" />
-          <Text style={s.noteText}>You’ll see the number’s price and payment details before confirming. Card details are not stored in the app.</Text>
-        </View>
-
-        {regionalPlans && (
-          <CallingPlanTiers
-            plans={regionalPlans}
-            selectedTierId={selectedTierId}
-            onSelect={setSelectedTierId}
-          />
-        )}
-
-        <NineTelPlanCards
-          isPremium={user?.isPremium === true}
-          onUpgraded={() => setUser((current: any) => (current ? { ...current, isPremium: true } : current))}
-        />
-
-        <PayAsYouGoCard />
 
         <Pressable style={s.primary} onPress={() => router.push("/(tabs)/(sub-tabs)/settings")}>
           <PhoneCall size={18} color="#FFF" /><Text style={s.primaryText}>Set up your number</Text>
@@ -126,6 +189,7 @@ export default function CallingPlan() {
     </SafeAreaView>
   );
 }
+
 const s = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F8F8FD" },
   page: { padding: 20, paddingBottom: 48 },
@@ -133,21 +197,25 @@ const s = StyleSheet.create({
   eyebrow: { color: "#8D899F", fontFamily: "Poppins-SemiBold", fontSize: 10, letterSpacing: 1.1, marginTop: 23 },
   title: { marginTop: 3, color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 27 },
   sub: { color: "#85829B", fontFamily: "Poppins-Regular", fontSize: 12, lineHeight: 18, marginTop: 3 },
-  card: { backgroundColor: "#211B59", borderRadius: 24, padding: 21, marginTop: 23 },
+  heroCard: { backgroundColor: "#211B59", borderRadius: 24, padding: 21, marginTop: 23 },
   badge: { flexDirection: "row", alignItems: "center", gap: 7 },
   badgeText: { color: "#DCD8FF", fontFamily: "Poppins-SemiBold", fontSize: 10, letterSpacing: 0.7 },
   plan: { color: "#FFF", fontFamily: "Poppins-SemiBold", fontSize: 21, marginTop: 15 },
   copy: { color: "#D0CCFC", fontFamily: "Poppins-Regular", fontSize: 11.5, lineHeight: 18, marginTop: 6 },
-  status: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", backgroundColor: "rgba(255,255,255,.12)", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 7, marginTop: 17 },
-  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#7BE4BB", marginRight: 6 },
-  statusText: { color: "#E6FFF4", fontFamily: "Poppins-Medium", fontSize: 10.5 },
-  compare: { flexDirection: "row", gap: 12, marginTop: 10 },
-  compareCol: { flex: 1, backgroundColor: "#FFF", borderRadius: 20, padding: 14, gap: 4 },
-  reward: { flexDirection: "row", alignItems: "center", gap: 11, backgroundColor: "#E8F7EF", borderRadius: 18, padding: 15, marginTop: 14, minHeight: 48 },
-  rewardText: { flex: 1, color: "#2F5E49", fontFamily: "Poppins-Regular", fontSize: 11.5, lineHeight: 17 },
-  rewardStrong: { fontFamily: "Poppins-SemiBold" },
+  segmentedWrap: { backgroundColor: "#EEEAFB", borderRadius: 18, padding: 5, marginTop: 20, flexDirection: "row", gap: 4 },
+  segmentedTab: { flex: 1, minHeight: 48, borderRadius: 14, alignItems: "center", justifyContent: "center", paddingHorizontal: 10 },
+  segmentedTabActive: { backgroundColor: "#FFF" },
+  segmentedText: { color: "#6D6890", fontFamily: "Poppins-Medium", fontSize: 11.5, textAlign: "center" },
+  segmentedTextActive: { color: "#211B59", fontFamily: "Poppins-SemiBold" },
+  summaryCard: { backgroundColor: "#FFF", borderRadius: 20, padding: 16, marginTop: 18, flexDirection: "row", alignItems: "flex-start", gap: 12 },
+  summaryIcon: { width: 36, height: 36, borderRadius: 14, backgroundColor: "#EEECFF", alignItems: "center", justifyContent: "center" },
+  summaryCopy: { flex: 1 },
+  summaryTitle: { color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 14 },
+  summaryText: { color: "#5D5A76", fontFamily: "Poppins-Regular", fontSize: 11, lineHeight: 17, marginTop: 4 },
+  inlineNote: { flexDirection: "row", gap: 11, backgroundColor: "#EAF2FF", borderRadius: 18, padding: 15, marginTop: 14 },
+  noteText: { flex: 1, color: "#52617B", fontFamily: "Poppins-Regular", fontSize: 10.5, lineHeight: 16 },
   headingRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 27, marginBottom: 10 },
-  heading: { color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 11, letterSpacing: 0.8, marginTop: 27 },
+  heading: { color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 11, letterSpacing: 0.8 },
   count: { color: "#6B6880", fontFamily: "Poppins-Regular", fontSize: 11 },
   group: { backgroundColor: "#FFF", borderRadius: 20, paddingHorizontal: 14 },
   row: { flexDirection: "row", alignItems: "center", paddingVertical: 14, borderBottomWidth: 1, borderColor: "#F1F0F6" },
@@ -156,8 +224,6 @@ const s = StyleSheet.create({
   benefitCopy: { flex: 1, marginRight: 10 },
   rowTitle: { color: "#302C4C", fontFamily: "Poppins-Medium", fontSize: 11.5 },
   rowText: { color: "#85829B", fontFamily: "Poppins-Regular", fontSize: 10, lineHeight: 15, marginTop: 2 },
-  note: { flexDirection: "row", gap: 11, backgroundColor: "#EAF2FF", borderRadius: 18, padding: 15, marginTop: 17 },
-  noteText: { flex: 1, color: "#52617B", fontFamily: "Poppins-Regular", fontSize: 10.5, lineHeight: 16 },
-  primary: { backgroundColor: "#5147AF", height: 52, borderRadius: 16, marginTop: 20, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
+  primary: { backgroundColor: "#5147AF", minHeight: 52, borderRadius: 16, marginTop: 20, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8 },
   primaryText: { color: "#FFF", fontFamily: "Poppins-SemiBold", fontSize: 13 },
 });

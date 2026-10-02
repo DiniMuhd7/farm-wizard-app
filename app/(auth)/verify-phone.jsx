@@ -54,8 +54,13 @@ export default function VerifyPhone() {
 
   const resetToEntry = () => {
     stopPolling();
+    if (redirectTimeoutRef.current) {
+      clearTimeout(redirectTimeoutRef.current);
+      redirectTimeoutRef.current = null;
+    }
     setVerificationState("entry");
     setValidationCode("");
+    setVerifiedNumber("");
     setStatusMessage("");
     setError("");
     setResendCooldown(0);

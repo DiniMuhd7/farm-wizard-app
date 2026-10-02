@@ -331,7 +331,7 @@ exports.outgoingDialStatus = async (req, res) => {
       // also debited; Twilio's timeLimit already capped it at 60 seconds.
       if (dialCallStatus === "completed" && rewardOutcome !== "redeemed" && rewardOutcome !== "replayed") {
         const { debitForCompletedCall } = require("../credits");
-        await debitForCompletedCall(match[1], Number(req.body?.DialCallDuration) || 0);
+        await debitForCompletedCall(match[1], Number(req.body?.DialCallDuration) || 0, String(req.body?.DialCallSid || req.body?.CallSid || "") || undefined);
       }
     }
   }

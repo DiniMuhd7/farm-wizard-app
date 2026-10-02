@@ -332,6 +332,6 @@ describe("voice controller — caller identity and reward settlement", () => {
   it("bills purchased credit with the provider duration when no reward was held", async () => {
     rewards.settleForCall.mockResolvedValue(null);
     await voice.outgoingDialStatus(statusReq({ DialCallDuration: "125" }), res());
-    expect(credits.debitForCompletedCall).toHaveBeenCalledWith(USER_ID, 125);
+    expect(credits.debitForCompletedCall).toHaveBeenCalledWith(USER_ID, 125, "CAparent");
   });
 });

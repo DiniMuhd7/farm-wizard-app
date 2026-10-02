@@ -184,6 +184,42 @@ describe("voice controller — outgoingCallTwiML welcome-reward precedence", () 
     expect(res.body).not.toContain(`callerId="${CALLER_ID}"`);
   });
 
+  it("does not use a user-controlled pending number as the From identity (spoofing prevention)", async () => {
+    User.findById
+      .mockReturnValueOnce(leanUser({ verifiedCallerId: CALLER_ID, callerIdStatus: "pending", callerIdVerificationMethod: null, phoneNumber: null, isGuest: false }))
+      .mockReturnValueOnce(leanUser({ creditsBalanceCents: 100 }));
+
+    const res = mockRes();
+    await outgoingCallTwiML(req({ CallerId: CALLER_ID }), res);
+
+    expect(res.body).toContain('callerId="+15550000000"');
+    expect(res.body).not.toContain(CALLER_ID);
+  });
+
+  it("places the call for an account with no caller ID at all using the fallback identity", async () => {
+    User.findById
+      .mockReturnValueOnce(leanUser({ verifiedCallerId: null, callerIdStatus: "unverified", phoneNumber: null, isGuest: false }))
+      .mockReturnValueOnce(leanUser({ creditsBalanceCents: 100 }));
+
+    const res = mockRes();
+    await outgoingCallTwiML(req(), res);
+
+    expect(res.body).toContain('callerId="+15550000000"');
+    expect(res.body).toContain(`<Number>${DESTINATION}</Number>`);
+  });
+
+  it("returns an actionable configuration error when an unverified caller has no safe fallback", async () => {
+    delete process.env.TWILIO_CALLER_ID;
+    User.findById.mockReturnValueOnce(leanUser({ verifiedCallerId: null, callerIdStatus: "unverified", phoneNumber: null, isGuest: false }));
+
+    const res = mockRes();
+    await outgoingCallTwiML(req(), res);
+
+    expect(res.statusCode).toBe(503);
+    expect(res.body).toContain("TWILIO_CALLER_ID");
+    expect(res.body).not.toMatch(/verif(y|ication) (required|your)/i);
+  });
+
   it("only lets one of two concurrent attempts win the same reward", async () => {
     User.findById.mockImplementation(() => leanUser({ verifiedCallerId: CALLER_ID, phoneNumber: null, isGuest: false, creditsBalanceCents: 0 }));
     rewards.ensureWelcomeReward.mockResolvedValue({ _id: "reward1" });

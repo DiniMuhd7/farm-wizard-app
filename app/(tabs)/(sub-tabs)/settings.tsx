@@ -327,12 +327,12 @@ export default function Settings() {
               ) : callerIdStatus === "failed" || callerIdStatus === "expired" ? (
                 <>
                   <Text style={s.rowLabel}>Verification {callerIdStatus}</Text>
-                  <Text style={s.rowDetail}>Your number is not used for calls until verification succeeds</Text>
+                  <Text style={s.rowDetail}>Calls still work and show 9tel's shared number until verification succeeds</Text>
                 </>
               ) : (
                 <>
-                  <Text style={s.rowLabel}>Not verified</Text>
-                  <Text style={s.rowDetail}>Verify your own number to use it as your caller ID</Text>
+                  <Text style={s.rowLabel}>Unverified caller ID</Text>
+                  <Text style={s.rowDetail}>You can still call. Recipients see 9tel&apos;s shared number, not yours. Verify to use your own.</Text>
                 </>
               )}
             </View>

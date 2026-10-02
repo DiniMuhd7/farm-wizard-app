@@ -71,13 +71,17 @@ describe("callerid controller", () => {
       expect(mockValidationRequestsCreate).not.toHaveBeenCalled();
     });
 
-    it("starts an authoritative voice call without returning its verification code", async () => {
+    it("starts an authoritative voice call and returns the provider code once for display", async () => {
+      mockValidationRequestsCreate.mockResolvedValue({ validationCode: "482913" });
       const res = mockRes();
       await callerid.startVerification({ user: { _id: "u1" }, body: { phoneNumber } }, res);
 
       expect(res.statusCode).toBe(200);
       expect(res.body).toMatchObject({ phoneNumber, callerIdStatus: "pending" });
-      expect(res.body.validationCode).toBeUndefined();
+      expect(res.body.validationCode).toBe("482913");
+      expect(res.body.expiresAt).toEqual(expect.any(String));
+      const persisted = JSON.stringify(User.findOneAndUpdate.mock.calls);
+      expect(persisted).not.toContain("482913");
       expect(mockValidationRequestsCreate).toHaveBeenCalledWith(expect.objectContaining({
         phoneNumber,
         statusCallback: expect.stringMatching(/\/callback\?token=[a-f0-9]{64}$/),

@@ -26,6 +26,8 @@ export default function VerifyPhone() {
   const [verifiedNumber, setVerifiedNumber] = useState("");
   const [verificationMethod, setVerificationMethod] = useState("twilio");
   const [resendCooldown, setResendCooldown] = useState(0);
+  // Held in memory only for the current attempt; never persisted or logged.
+  const [validationCode, setValidationCode] = useState("");
   const pollRef = useRef(null);
   const pollDeadlineRef = useRef(0);
   const redirectTimeoutRef = useRef(null);
@@ -59,6 +61,7 @@ export default function VerifyPhone() {
       redirectTimeoutRef.current = null;
     }
     setVerificationState("entry");
+    setValidationCode("");
     setVerifiedNumber("");
     setStatusMessage("");
     setError("");
@@ -71,6 +74,7 @@ export default function VerifyPhone() {
     pollRef.current = setInterval(async () => {
       if (Date.now() > pollDeadlineRef.current) {
         stopPolling();
+        setValidationCode("");
         setVerificationState("failed");
         setError("This verification attempt expired. Request another call to try again.");
         setStatusMessage("Your number remains unverified until the server receives Twilio’s confirmation.");
@@ -80,6 +84,7 @@ export default function VerifyPhone() {
         const status = await getCallerIdVerificationStatus();
         if (status.callerIdStatus === "verified" && status.verifiedCallerId === expectedNumber) {
           stopPolling();
+          setValidationCode("");
           setVerifiedNumber(status.verifiedCallerId);
           setVerificationMethod(status.method || "twilio");
           setVerificationState("success");
@@ -90,6 +95,7 @@ export default function VerifyPhone() {
           }, 2500);
         } else if (status.callerIdStatus === "failed" || status.callerIdStatus === "expired") {
           stopPolling();
+          setValidationCode("");
           setVerificationState("failed");
           setError(status.callerIdStatus === "expired"
             ? "This verification attempt expired. Request another call to try again."
@@ -137,7 +143,7 @@ export default function VerifyPhone() {
     };
   }, []);
 
-  const beginVerification = async (nextNumber = phoneNumber) => {
+  const beginVerification = async (nextNumber = phoneNumber, replacePending = false) => {
     const trimmed = nextNumber.trim();
     if (!E164.test(trimmed)) {
       setError("Enter your number in E.164 format, for example +2348012345678.");
@@ -148,6 +154,7 @@ export default function VerifyPhone() {
     setStatusMessage("");
     setSubmitting(true);
     try {
+      if (replacePending) await cancelCallerIdVerification();
       const result = await startCallerIdVerification(trimmed);
       setPhoneNumber(trimmed);
       if (result.callerIdStatus === "verified") {
@@ -156,6 +163,7 @@ export default function VerifyPhone() {
         setVerificationState("success");
         setStatusMessage(result.message || "Developer test verification completed. No provider call was placed.");
       } else {
+        setValidationCode(result.validationCode || "");
         setVerificationState("calling");
         setStatusMessage(result.message || `We’re calling ${trimmed}. Answer and enter the spoken code on your phone keypad.`);
         setResendCooldown(RESEND_COOLDOWN_SECONDS);
@@ -226,7 +234,7 @@ export default function VerifyPhone() {
                 <View style={styles.sectionCopy}>
                   <Text style={styles.sectionTitle}>Step 1 · Enter the number you want to show</Text>
                   <Text style={styles.sectionBody}>
-                    Include the country code. Twilio will call this number. Answer and enter the spoken code using your phone keypad.
+                    Include the country code. We will show a code here, then call this number. Answer and enter that code on your phone keypad.
                   </Text>
                 </View>
               </View>
@@ -281,10 +289,29 @@ export default function VerifyPhone() {
                 <View style={styles.sectionCopy}>
                   <Text style={styles.sectionTitle}>Step 2 · Answer the call</Text>
                   <Text style={styles.sectionBody}>
-                    Follow the spoken instructions and enter the code on your phone keypad. The app never displays or logs the code.
+                    When the call connects, enter the code below on your phone keypad.
                   </Text>
                 </View>
               </View>
+
+              {validationCode ? (
+                <View
+                  style={styles.codeCard}
+                  accessible
+                  accessibilityRole="text"
+                  accessibilityLabel={`Your verification code is ${validationCode.split("").join(" ")}`}
+                >
+                  <Text style={styles.codeLabel}>YOUR VERIFICATION CODE</Text>
+                  <Text style={styles.codeValue}>{validationCode}</Text>
+                  <Text style={styles.codeHint}>Valid for this call only. Don&apos;t share it.</Text>
+                </View>
+              ) : (
+                <View style={[styles.statusCard, styles.statusInfo]}>
+                  <Text style={styles.statusText}>
+                    The code is only shown when a call is requested. Tap &quot;Call again&quot; to get a new code.
+                  </Text>
+                </View>
+              )}
 
               {!!statusMessage && (
                 <View style={[styles.statusCard, styles.statusInfo]}>
@@ -304,7 +331,7 @@ export default function VerifyPhone() {
                 <Pressable
                   accessibilityRole="button"
                   disabled={submitting || resendCooldown > 0}
-                  onPress={() => beginVerification(phoneNumber)}
+                  onPress={() => beginVerification(phoneNumber, true)}
                   style={[styles.secondaryButton, (submitting || resendCooldown > 0) && styles.secondaryButtonDisabled]}
                 >
                   <RefreshCcw size={16} color="#5147AF" />
@@ -390,6 +417,16 @@ export default function VerifyPhone() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F8F8FD" },
+  codeCard: {
+    backgroundColor: "#EFEDFF",
+    borderRadius: 16,
+    paddingVertical: 18,
+    alignItems: "center",
+    marginTop: 12,
+  },
+  codeLabel: { color: "#5147AF", fontFamily: "Poppins-SemiBold", fontSize: 11, letterSpacing: 0.9 },
+  codeValue: { color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 40, letterSpacing: 8, marginTop: 4 },
+  codeHint: { color: "#6B6785", fontFamily: "Poppins-Regular", fontSize: 12, marginTop: 4 },
   scroll: { flexGrow: 1 },
   page: {
     minHeight: Dimensions.get("window").height - 48,

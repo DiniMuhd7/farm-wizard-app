@@ -41,3 +41,11 @@ This mode is unsuitable for proving real ownership or testing live caller-ID pre
 The persisted lifecycle is `unverified` → `pending` → `verified`, with `failed` and `expired` terminal attempt states. A retry starts a new provider attempt; cancel invalidates its callback token, so a late callback cannot verify the number. Starting a new verification clears the previous active caller ID. Authenticated status/start/cancel endpoints are owner-scoped and rate-limited. Twilio callbacks require Twilio signature validation, a one-time per-attempt token, the exact pending number, and an unexpired attempt.
 
 At call setup the backend uses a caller ID only when it is persisted as verified by Twilio (legacy verified records remain supported). Unverified, failed, expired, pending, and synthetic developer-test IDs use the Twilio-owned fallback number. Client state is never authoritative for outbound calls.
+
+## Verification call keeps asking for the code
+
+The spoken prompt ("enter your verification code") is hosted and run by Twilio's Outgoing Caller ID validation call; 9tel has no `<Gather>`/TwiML of its own for this flow, so the server cannot change the IVR's retry behaviour. 9tel controls two things: the code shown in the app, and whether the result reaches the backend.
+
+- The code is valid only for the **latest** `validationRequests.create` call for that number. Requesting "Call again" issues a new code and invalidates the previous one, and a code is never retrievable after the start response. Enter the code currently shown in the app, on the call that was placed for it.
+- The backend now also reconciles a `pending` attempt on every status poll by asking Twilio whether the number became an outgoing caller ID *after the attempt started*. If it did, the attempt is completed (atomically, once) even when the signed callback never arrived — for example because `PUBLIC_BASE_URL` does not match the public URL (signature rejected with 403) or the backend was unreachable. The app's existing status polling then shows the final state.
+- Callback and reconciliation outcomes are logged with a non-secret `correlationId` (prefix of the one-way token hash); codes, tokens and phone numbers are not logged.

@@ -64,6 +64,67 @@ function providerError(error) {
   return { status: 503, code: "provider_unavailable", message: "The voice verification service is temporarily unavailable. Try again later." };
 }
 
+// Non-secret correlation id for operators: a prefix of the one-way token hash.
+function correlationId(tokenHash) {
+  return tokenHash ? String(tokenHash).slice(0, 12) : null;
+}
+
+function logAttempt(level, event, tokenHash, extra = {}) {
+  console[level](`Caller ID verification: ${event}`, { correlationId: correlationId(tokenHash), ...extra });
+}
+
+// Atomically completes the current pending attempt. Used by both the signed
+// Twilio callback and the status reconciliation so a verification can only be
+// applied once and the welcome reward is only recorded once.
+async function completeVerification(filter, phoneNumber) {
+  const verified = await User.findOneAndUpdate(
+    { ...filter, callerIdStatus: "pending", callerIdVerificationNumber: phoneNumber, callerIdVerificationExpiresAt: { $gt: new Date() } },
+    {
+      verifiedCallerId: phoneNumber,
+      callerIdStatus: "verified",
+      callerIdVerificationMethod: "twilio",
+      ...clearPendingVerification(),
+    },
+    { new: true }
+  );
+  if (verified) {
+    try {
+      await require("../rewards").ensureWelcomeReward(verified._id);
+    } catch (rewardError) {
+      console.error("Unable to record welcome reward:", rewardError.message);
+    }
+  }
+  return verified;
+}
+
+// The signed callback is the primary completion path, but it can be lost when
+// PUBLIC_BASE_URL does not match the externally visible URL (signature
+// rejected) or the backend is unreachable. Twilio only lists a number as an
+// outgoing caller ID once the person has entered the right code, so confirm
+// with Twilio directly. A number that was already listed before this attempt
+// started is not accepted as proof.
+async function reconcilePendingWithTwilio(user) {
+  if (missingTwilioConfig().length) return null;
+  const phoneNumber = user.callerIdVerificationNumber;
+  const tokenHash = user.callerIdVerificationTokenHash;
+  const expiresAt = user.callerIdVerificationExpiresAt ? new Date(user.callerIdVerificationExpiresAt).getTime() : 0;
+  if (!phoneNumber || !tokenHash || expiresAt <= Date.now()) return null;
+  const attemptStartedAt = expiresAt - VERIFICATION_TTL_MS;
+  try {
+    const found = await twilioClient().outgoingCallerIds.list({ phoneNumber, limit: 1 });
+    const record = found?.[0];
+    if (!record || record.phoneNumber !== phoneNumber) return null;
+    const createdAt = new Date(record.dateCreated || record.dateUpdated || 0).getTime();
+    if (!(createdAt >= attemptStartedAt - 60 * 1000)) return null;
+    const verified = await completeVerification({ _id: user._id, callerIdVerificationTokenHash: tokenHash }, phoneNumber);
+    if (verified) logAttempt("info", "completed by provider reconciliation", tokenHash);
+    return verified;
+  } catch (error) {
+    logAttempt("warn", "provider reconciliation failed", tokenHash, { providerCode: error.code || null });
+    return null;
+  }
+}
+
 function isOwner(req) {
   return Boolean(req.user?._id);
 }
@@ -194,7 +255,7 @@ exports.getVerificationStatus = async (req, res) => {
   if (!isOwner(req)) return res.status(401).json({ code: "unauthorized", message: "Sign in to check caller ID status." });
 
   const user = await User.findById(req.user._id).select(
-    "verifiedCallerId callerIdStatus callerIdVerificationMethod callerIdVerificationNumber callerIdLastAttemptedNumber callerIdVerificationExpiresAt"
+    "verifiedCallerId callerIdStatus callerIdVerificationMethod callerIdVerificationNumber callerIdVerificationTokenHash callerIdLastAttemptedNumber callerIdVerificationExpiresAt"
   );
   if (user?.callerIdStatus === "pending") {
     const expiry = user.callerIdVerificationExpiresAt ? new Date(user.callerIdVerificationExpiresAt).getTime() : 0;
@@ -211,6 +272,17 @@ exports.getVerificationStatus = async (req, res) => {
       return res.status(200).json({
         verifiedCallerId: current?.callerIdStatus === "verified" ? current.verifiedCallerId || null : null,
         callerIdStatus: current?.callerIdStatus || "unverified",
+      });
+    }
+  }
+
+  if (user?.callerIdStatus === "pending") {
+    const reconciled = await reconcilePendingWithTwilio(user);
+    if (reconciled) {
+      return res.status(200).json({
+        verifiedCallerId: reconciled.verifiedCallerId || null,
+        callerIdStatus: "verified",
+        method: "twilio",
       });
     }
   }
@@ -269,34 +341,15 @@ exports.verificationCallback = async (req, res) => {
   const status = String(req.body?.VerificationStatus || "").toLowerCase();
   try {
     if (status === "success" && E164.test(phoneNumber)) {
-      const verified = await User.findOneAndUpdate(
-        {
-          callerIdStatus: "pending",
-          callerIdVerificationTokenHash: tokenHash,
-          callerIdVerificationNumber: phoneNumber,
-          callerIdVerificationExpiresAt: { $gt: new Date() },
-        },
-        {
-          verifiedCallerId: phoneNumber,
-          callerIdStatus: "verified",
-          callerIdVerificationMethod: "twilio",
-          ...clearPendingVerification(),
-        },
-        { new: true }
-      );
-      if (verified) {
-        try {
-          await require("../rewards").ensureWelcomeReward(verified._id);
-        } catch (rewardError) {
-          console.error("Unable to record welcome reward:", rewardError.message);
-        }
-      }
+      const verified = await completeVerification({ callerIdVerificationTokenHash: tokenHash }, phoneNumber);
+      logAttempt("info", verified ? "callback verified" : "callback ignored (not pending, expired, mismatched or replayed)", tokenHash);
     } else {
       const callerIdStatus = status === "expired" ? "expired" : "failed";
-      await User.findOneAndUpdate(
+      const updated = await User.findOneAndUpdate(
         { callerIdStatus: "pending", callerIdVerificationTokenHash: tokenHash },
         { callerIdStatus, callerIdVerificationMethod: null, ...clearPendingVerification() }
       );
+      logAttempt("info", `callback ${callerIdStatus}`, tokenHash, { applied: Boolean(updated) });
     }
   } catch (error) {
     console.error("Unable to save caller ID verification result", { code: error.code || null });

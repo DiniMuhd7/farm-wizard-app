@@ -3,11 +3,15 @@ const User = require("../../models/User");
 const { twilioRequestIsValid } = require("../../utils/twilioSignature");
 
 const E164 = /^\+[1-9]\d{6,14}$/;
-const VERIFICATION_TTL_MS = 10 * 60 * 1000;
-const REQUIRED_TWILIO_CONFIG = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "PUBLIC_BASE_URL"];
+const CODE_LENGTH = 6;
+const VERIFICATION_TTL_MS = 5 * 60 * 1000;
+const MAX_ATTEMPTS = 5;
+const RESEND_COOLDOWN_MS = 30 * 1000;
+const REQUIRED_CONFIG = ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "PUBLIC_BASE_URL", "TWILIO_CALLER_ID", "JWT_SECRET"];
+const FAILED_CALL_STATUSES = ["failed", "busy", "no-answer", "canceled"];
 
-function missingTwilioConfig() {
-  return REQUIRED_TWILIO_CONFIG.filter((key) => !process.env[key]);
+function missingConfig() {
+  return REQUIRED_CONFIG.filter((key) => !process.env[key]);
 }
 
 function developerTestNumbers() {
@@ -18,19 +22,48 @@ function developerTestNumbers() {
     .filter((number) => E164.test(number));
 }
 
-function hashCallbackToken(token) {
-  return crypto.createHash("sha256").update(token).digest("hex");
-}
-
 function twilioClient() {
   const twilio = require("twilio");
   return twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 }
 
+function generateCode() {
+  return String(crypto.randomInt(0, 10 ** CODE_LENGTH)).padStart(CODE_LENGTH, "0");
+}
+
+// Only this keyed hash is persisted. It is bound to the user, session and
+// number so a hash cannot be replayed against another session or account.
+function hashCode(userId, sessionId, phoneNumber, code) {
+  return crypto
+    .createHmac("sha256", process.env.JWT_SECRET)
+    .update(`callerid:${userId}:${sessionId}:${phoneNumber}:${code}`)
+    .digest("hex");
+}
+
+function codeMatches(expectedHash, userId, sessionId, phoneNumber, code) {
+  if (!expectedHash) return false;
+  const expected = Buffer.from(expectedHash, "hex");
+  const actual = Buffer.from(hashCode(userId, sessionId, phoneNumber, code), "hex");
+  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+}
+
+// Spoken twice, digit by digit, so it is easy to catch and write down.
+function spokenCodeTwiML(code) {
+  const digits = code.split("").join(", ");
+  const sentence = `Your 9tel verification code is ${digits}.`;
+  return (
+    `<Response><Say>${sentence} Enter this code in the 9tel app. Do not share it.</Say>` +
+    `<Pause length="2"/><Say>I repeat. ${sentence} Goodbye.</Say></Response>`
+  );
+}
+
 function clearPendingVerification() {
   return {
     callerIdVerificationNumber: null,
-    callerIdVerificationTokenHash: null,
+    callerIdVerificationCodeHash: null,
+    callerIdVerificationSessionId: null,
+    callerIdVerificationAttempts: 0,
+    callerIdVerificationCallSid: null,
     callerIdVerificationExpiresAt: null,
   };
 }
@@ -51,38 +84,59 @@ function expirePendingVerification(userId, now = new Date()) {
   );
 }
 
+function failPendingSession(userId, sessionId, callerIdStatus = "failed") {
+  return User.findOneAndUpdate(
+    { _id: userId, callerIdStatus: "pending", callerIdVerificationSessionId: sessionId },
+    { callerIdStatus, callerIdVerificationMethod: null, ...clearPendingVerification() },
+    { new: true }
+  );
+}
+
 function providerError(error) {
-  if (error.code === "21211") {
+  if (error.code === 21211 || error.code === "21211") {
     return { status: 400, code: "invalid_phone_number", message: "The provider could not call this number. Check the country code and try again." };
   }
-  if (error.code === "21408") {
+  if (error.code === 21408 || error.code === "21408") {
     return { status: 400, code: "country_not_enabled", message: "Calling this country is not enabled for verification. Contact support." };
   }
-  if (error.code === "20429") {
+  if (error.code === 20429 || error.code === "20429") {
     return { status: 429, code: "verification_rate_limited", message: "Too many verification attempts. Wait a few minutes before trying again." };
   }
   return { status: 503, code: "provider_unavailable", message: "The voice verification service is temporarily unavailable. Try again later." };
 }
 
-// Non-secret correlation id for operators: a prefix of the one-way token hash.
-function correlationId(tokenHash) {
-  return tokenHash ? String(tokenHash).slice(0, 12) : null;
+// The correlation id is the random session id: safe to log and to return to
+// the owner. It reveals nothing about the code.
+function logAttempt(level, event, sessionId, extra = {}) {
+  console[level](`Caller ID verification: ${event}`, { correlationId: sessionId || null, ...extra });
 }
 
-function logAttempt(level, event, tokenHash, extra = {}) {
-  console[level](`Caller ID verification: ${event}`, { correlationId: correlationId(tokenHash), ...extra });
+function respond(res, status, correlationId, body) {
+  res.set?.("Cache-Control", "no-store");
+  if (correlationId) res.set?.("X-Correlation-ID", correlationId);
+  return res.status(status).json(correlationId ? { correlationId, ...body } : body);
 }
 
-// Atomically completes the current pending attempt. Used by both the signed
-// Twilio callback and the status reconciliation so a verification can only be
-// applied once and the welcome reward is only recorded once.
-async function completeVerification(filter, phoneNumber) {
+function isOwner(req) {
+  return Boolean(req.user?._id);
+}
+
+// Atomically consumes the current pending session. The filter pins status,
+// session, number and expiry, so of any number of concurrent or replayed
+// submissions exactly one can ever flip the account to verified.
+async function completeVerification(userId, sessionId, phoneNumber) {
   const verified = await User.findOneAndUpdate(
-    { ...filter, callerIdStatus: "pending", callerIdVerificationNumber: phoneNumber, callerIdVerificationExpiresAt: { $gt: new Date() } },
+    {
+      _id: userId,
+      callerIdStatus: "pending",
+      callerIdVerificationSessionId: sessionId,
+      callerIdVerificationNumber: phoneNumber,
+      callerIdVerificationExpiresAt: { $gt: new Date() },
+    },
     {
       verifiedCallerId: phoneNumber,
       callerIdStatus: "verified",
-      callerIdVerificationMethod: "twilio",
+      callerIdVerificationMethod: "spoken_code",
       ...clearPendingVerification(),
     },
     { new: true }
@@ -95,38 +149,6 @@ async function completeVerification(filter, phoneNumber) {
     }
   }
   return verified;
-}
-
-// The signed callback is the primary completion path, but it can be lost when
-// PUBLIC_BASE_URL does not match the externally visible URL (signature
-// rejected) or the backend is unreachable. Twilio only lists a number as an
-// outgoing caller ID once the person has entered the right code, so confirm
-// with Twilio directly. A number that was already listed before this attempt
-// started is not accepted as proof.
-async function reconcilePendingWithTwilio(user) {
-  if (missingTwilioConfig().length) return null;
-  const phoneNumber = user.callerIdVerificationNumber;
-  const tokenHash = user.callerIdVerificationTokenHash;
-  const expiresAt = user.callerIdVerificationExpiresAt ? new Date(user.callerIdVerificationExpiresAt).getTime() : 0;
-  if (!phoneNumber || !tokenHash || expiresAt <= Date.now()) return null;
-  const attemptStartedAt = expiresAt - VERIFICATION_TTL_MS;
-  try {
-    const found = await twilioClient().outgoingCallerIds.list({ phoneNumber, limit: 1 });
-    const record = found?.[0];
-    if (!record || record.phoneNumber !== phoneNumber) return null;
-    const createdAt = new Date(record.dateCreated || record.dateUpdated || 0).getTime();
-    if (!(createdAt >= attemptStartedAt - 60 * 1000)) return null;
-    const verified = await completeVerification({ _id: user._id, callerIdVerificationTokenHash: tokenHash }, phoneNumber);
-    if (verified) logAttempt("info", "completed by provider reconciliation", tokenHash);
-    return verified;
-  } catch (error) {
-    logAttempt("warn", "provider reconciliation failed", tokenHash, { providerCode: error.code || null });
-    return null;
-  }
-}
-
-function isOwner(req) {
-  return Boolean(req.user?._id);
 }
 
 // POST /api/v1/callerid/start { phoneNumber }
@@ -146,7 +168,7 @@ exports.startVerification = async (req, res) => {
 
     const testNumbers = developerTestNumbers();
     const isDeveloperTest = testNumbers.includes(phoneNumber);
-    const missing = isDeveloperTest ? [] : missingTwilioConfig();
+    const missing = isDeveloperTest ? [] : missingConfig();
     if (missing.length) {
       console.warn("Caller ID verification configuration is incomplete", { missing });
       return res.status(503).json({
@@ -186,17 +208,31 @@ exports.startVerification = async (req, res) => {
 
     const now = new Date();
     const expiresAt = new Date(now.getTime() + VERIFICATION_TTL_MS);
-    const callbackToken = crypto.randomBytes(32).toString("hex");
-    const tokenHash = hashCallbackToken(callbackToken);
+    const sessionId = crypto.randomBytes(12).toString("hex");
+    const code = generateCode();
+    // Compare-and-set: one active session per account, and a server-side
+    // resend cooldown that cancel-then-restart cannot bypass.
     const pending = await User.findOneAndUpdate(
-      { _id: req.user._id, callerIdStatus: { $ne: "pending" } },
+      {
+        _id: req.user._id,
+        callerIdStatus: { $ne: "pending" },
+        $or: [
+          { callerIdLastRequestedAt: null },
+          { callerIdLastRequestedAt: { $exists: false } },
+          { callerIdLastRequestedAt: { $lte: new Date(now.getTime() - RESEND_COOLDOWN_MS) } },
+        ],
+      },
       {
         $set: {
           callerIdStatus: "pending",
           callerIdVerificationMethod: null,
           callerIdLastAttemptedNumber: phoneNumber,
+          callerIdLastRequestedAt: now,
           callerIdVerificationNumber: phoneNumber,
-          callerIdVerificationTokenHash: tokenHash,
+          callerIdVerificationCodeHash: hashCode(String(req.user._id), sessionId, phoneNumber, code),
+          callerIdVerificationSessionId: sessionId,
+          callerIdVerificationAttempts: 0,
+          callerIdVerificationCallSid: null,
           callerIdVerificationExpiresAt: expiresAt,
         },
         $unset: { verifiedCallerId: "" },
@@ -204,48 +240,152 @@ exports.startVerification = async (req, res) => {
       { new: true }
     );
     if (!pending) {
+      const current = await User.findById(req.user._id).select("callerIdStatus callerIdLastRequestedAt").lean();
+      if (current && current.callerIdStatus !== "pending") {
+        return res.status(429).json({ code: "resend_cooldown", message: "Please wait a few seconds before requesting another verification call." });
+      }
       return res.status(409).json({ code: "verification_pending", message: "Cancel or finish the current verification before starting another." });
     }
 
-    let validationCode;
+    let callSid;
     try {
-      const callbackUrl = `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/callerid/callback?token=${callbackToken}`;
-      const validation = await twilioClient().validationRequests.create({
-        phoneNumber,
-        friendlyName: "9tel caller ID verification",
-        statusCallback: callbackUrl,
+      const baseUrl = process.env.PUBLIC_BASE_URL.replace(/\/$/, "");
+      const call = await twilioClient().calls.create({
+        to: phoneNumber,
+        from: process.env.TWILIO_CALLER_ID,
+        twiml: spokenCodeTwiML(code),
+        timeout: 30,
+        statusCallback: `${baseUrl}/api/v1/callerid/call-status?session=${sessionId}`,
+        statusCallbackMethod: "POST",
+        statusCallbackEvent: ["completed"],
       });
-      validationCode = validation?.validationCode;
+      callSid = call?.sid;
     } catch (error) {
-      await User.findOneAndUpdate(
-        { _id: req.user._id, callerIdStatus: "pending", callerIdVerificationTokenHash: tokenHash },
-        { callerIdStatus: "failed", callerIdVerificationMethod: null, ...clearPendingVerification() }
-      );
+      await failPendingSession(req.user._id, sessionId);
       const failure = providerError(error);
-      if (failure.code === "provider_unavailable") {
-        console.error("Unable to start caller ID verification", {
-          providerCode: error.code || null,
-          providerStatus: error.status || null,
-        });
-      }
-      return res.status(failure.status).json({ code: failure.code, message: failure.message });
+      logAttempt("error", "voice call could not be placed", sessionId, { providerCode: error.code || null, providerStatus: error.status || null });
+      return respond(res, failure.status, sessionId, { code: failure.code, message: failure.message });
     }
 
-    // Twilio's call asks the user to key in this code, and it is only ever
-    // returned in this create response. It is relayed once to the authenticated
-    // owner for display, never stored or logged, and must not be cached.
-    res.set?.("Cache-Control", "no-store");
-    return res.status(200).json({
+    // Best-effort bookkeeping: the call is already placed and the code spoken,
+    // so a failure here must not kill the session.
+    if (callSid) {
+      try {
+        await User.findOneAndUpdate(
+          { _id: req.user._id, callerIdStatus: "pending", callerIdVerificationSessionId: sessionId },
+          { callerIdVerificationCallSid: callSid }
+        );
+      } catch (error) {
+        logAttempt("warn", "could not record call sid", sessionId);
+      }
+    }
+    logAttempt("info", "voice call requested", sessionId);
+    // The code is never returned to or displayed in the app: it is only
+    // spoken on the possession-verification call.
+    return respond(res, 200, sessionId, {
       phoneNumber,
       callerIdStatus: "pending",
-      ...(validationCode ? { validationCode: String(validationCode) } : {}),
       expiresAt: expiresAt.toISOString(),
-      message: validationCode
-        ? `We’re calling ${phoneNumber}. Answer and enter the code shown on screen on your phone keypad.`
-        : `We’re calling ${phoneNumber}. Answer and follow the spoken instructions.`,
+      maxAttempts: MAX_ATTEMPTS,
+      message: `We’re calling ${phoneNumber}. Answer, listen for the code, then enter it here.`,
     });
   } catch (error) {
     console.error("Unable to start caller ID verification", { code: error.code || null });
+    return res.status(503).json({ code: "verification_unavailable", message: "Caller ID verification is temporarily unavailable. Try again later." });
+  }
+};
+
+// POST /api/v1/callerid/verify { code }
+exports.submitVerificationCode = async (req, res) => {
+  if (!isOwner(req)) return res.status(401).json({ code: "unauthorized", message: "Sign in to verify a caller ID." });
+
+  const code = String(req.body?.code ?? "").trim();
+  if (!new RegExp(`^\\d{${CODE_LENGTH}}$`).test(code)) {
+    return res.status(400).json({ code: "invalid_code_format", message: `Enter the ${CODE_LENGTH}-digit code you heard on the call.` });
+  }
+  if (!process.env.JWT_SECRET) {
+    return res.status(503).json({ code: "caller_id_configuration_error", message: "Voice verification is not configured." });
+  }
+
+  try {
+    const user = await User.findById(req.user._id)
+      .select("callerIdStatus callerIdVerificationNumber callerIdVerificationCodeHash callerIdVerificationSessionId callerIdVerificationExpiresAt")
+      .lean();
+    const sessionId = user?.callerIdVerificationSessionId;
+    if (!user || user.callerIdStatus !== "pending" || !sessionId) {
+      return res.status(409).json({ code: "no_active_verification", message: "There is no active verification. Request a new call." });
+    }
+    if (!user.callerIdVerificationExpiresAt || new Date(user.callerIdVerificationExpiresAt).getTime() <= Date.now()) {
+      await expirePendingVerification(req.user._id);
+      logAttempt("info", "code submitted after expiry", sessionId);
+      return respond(res, 410, sessionId, { code: "verification_expired", callerIdStatus: "expired", message: "This code expired. Request a new call." });
+    }
+
+    // Every guess is counted atomically *before* it is compared, so parallel
+    // submissions cannot exceed the attempt limit.
+    const counted = await User.findOneAndUpdate(
+      {
+        _id: req.user._id,
+        callerIdStatus: "pending",
+        callerIdVerificationSessionId: sessionId,
+        callerIdVerificationAttempts: { $lt: MAX_ATTEMPTS },
+        callerIdVerificationExpiresAt: { $gt: new Date() },
+      },
+      { $inc: { callerIdVerificationAttempts: 1 } },
+      { new: true }
+    );
+    if (!counted) {
+      // Not counted: the session ran out of attempts, or was consumed,
+      // cancelled or expired after the check above. Report which.
+      const latest = await User.findById(req.user._id)
+        .select("callerIdStatus callerIdVerificationSessionId callerIdVerificationAttempts callerIdVerificationExpiresAt")
+        .lean();
+      const stillActive = latest?.callerIdStatus === "pending" && latest.callerIdVerificationSessionId === sessionId;
+      if (!stillActive) {
+        return respond(res, 409, sessionId, { code: "no_active_verification", message: "This verification is no longer active. Check your status or request a new call." });
+      }
+      if (new Date(latest.callerIdVerificationExpiresAt).getTime() <= Date.now()) {
+        await expirePendingVerification(req.user._id);
+        return respond(res, 410, sessionId, { code: "verification_expired", callerIdStatus: "expired", message: "This code expired. Request a new call." });
+      }
+      await failPendingSession(req.user._id, sessionId);
+      logAttempt("warn", "attempt limit reached", sessionId);
+      return respond(res, 429, sessionId, { code: "too_many_attempts", callerIdStatus: "failed", message: "Too many incorrect codes. Request a new call." });
+    }
+
+    const phoneNumber = user.callerIdVerificationNumber;
+    if (!codeMatches(user.callerIdVerificationCodeHash, String(req.user._id), sessionId, phoneNumber, code)) {
+      const attemptsRemaining = Math.max(0, MAX_ATTEMPTS - counted.callerIdVerificationAttempts);
+      logAttempt("info", "incorrect code", sessionId, { attemptsRemaining });
+      if (attemptsRemaining === 0) {
+        await failPendingSession(req.user._id, sessionId);
+        return respond(res, 429, sessionId, { code: "too_many_attempts", callerIdStatus: "failed", message: "Too many incorrect codes. Request a new call." });
+      }
+      return respond(res, 400, sessionId, { code: "incorrect_code", attemptsRemaining, message: "That code is not correct. Check the code you heard and try again." });
+    }
+
+    let verified;
+    try {
+      verified = await completeVerification(req.user._id, sessionId, phoneNumber);
+    } catch (error) {
+      if (error?.code === 11000) {
+        await failPendingSession(req.user._id, sessionId);
+        return respond(res, 409, sessionId, { code: "caller_id_in_use", message: "That number is already verified on another 9tel account." });
+      }
+      throw error;
+    }
+    if (!verified) {
+      // Another request consumed, cancelled or expired this session first.
+      return respond(res, 409, sessionId, { code: "no_active_verification", message: "This verification is no longer active. Check your status or request a new call." });
+    }
+    logAttempt("info", "verified", sessionId);
+    return respond(res, 200, sessionId, {
+      callerIdStatus: "verified",
+      verifiedCallerId: verified.verifiedCallerId,
+      method: "spoken_code",
+    });
+  } catch (error) {
+    console.error("Unable to verify caller ID code", { code: error.code || null });
     return res.status(503).json({ code: "verification_unavailable", message: "Caller ID verification is temporarily unavailable. Try again later." });
   }
 };
@@ -255,7 +395,7 @@ exports.getVerificationStatus = async (req, res) => {
   if (!isOwner(req)) return res.status(401).json({ code: "unauthorized", message: "Sign in to check caller ID status." });
 
   const user = await User.findById(req.user._id).select(
-    "verifiedCallerId callerIdStatus callerIdVerificationMethod callerIdVerificationNumber callerIdVerificationTokenHash callerIdLastAttemptedNumber callerIdVerificationExpiresAt"
+    "verifiedCallerId callerIdStatus callerIdVerificationMethod callerIdVerificationNumber callerIdVerificationSessionId callerIdVerificationAttempts callerIdLastAttemptedNumber callerIdVerificationExpiresAt"
   );
   if (user?.callerIdStatus === "pending") {
     const expiry = user.callerIdVerificationExpiresAt ? new Date(user.callerIdVerificationExpiresAt).getTime() : 0;
@@ -276,17 +416,6 @@ exports.getVerificationStatus = async (req, res) => {
     }
   }
 
-  if (user?.callerIdStatus === "pending") {
-    const reconciled = await reconcilePendingWithTwilio(user);
-    if (reconciled) {
-      return res.status(200).json({
-        verifiedCallerId: reconciled.verifiedCallerId || null,
-        callerIdStatus: "verified",
-        method: "twilio",
-      });
-    }
-  }
-
   const isProductionTestRecord =
     process.env.NODE_ENV === "production" && user?.callerIdVerificationMethod === "developer_test";
   const callerIdStatus = isProductionTestRecord
@@ -301,7 +430,12 @@ exports.getVerificationStatus = async (req, res) => {
       ? { phoneNumber: user.callerIdLastAttemptedNumber }
       : {}),
     ...(callerIdStatus === "pending" && user?.callerIdVerificationNumber
-      ? { phoneNumber: user.callerIdVerificationNumber }
+      ? {
+          phoneNumber: user.callerIdVerificationNumber,
+          expiresAt: new Date(user.callerIdVerificationExpiresAt).toISOString(),
+          attemptsRemaining: Math.max(0, MAX_ATTEMPTS - (user.callerIdVerificationAttempts || 0)),
+          correlationId: user.callerIdVerificationSessionId,
+        }
       : {}),
     ...(["failed", "expired"].includes(callerIdStatus) && user?.callerIdLastAttemptedNumber
       ? { phoneNumber: user.callerIdLastAttemptedNumber }
@@ -321,42 +455,31 @@ exports.cancelVerification = async (req, res) => {
   return res.status(200).json({ callerIdStatus: canceled ? "unverified" : "unchanged" });
 };
 
-// POST /api/v1/callerid/callback — only Twilio's signed callback can confirm a
-// real verification. The random callback token binds this response to the
-// current pending attempt and is never sent to the app.
-exports.verificationCallback = async (req, res) => {
+// POST /api/v1/callerid/call-status?session=<id> — Twilio's signed status
+// callback for the verification call. It can only ever move the matching
+// pending session to "failed" when the provider reports the call did not
+// connect; it never verifies anything (only the owner's code submission can).
+exports.callStatusCallback = async (req, res) => {
   if (!twilioRequestIsValid(req)) {
-    console.warn("Rejected Twilio caller ID callback: signature validation failed", {
-      hasAuthToken: Boolean(process.env.TWILIO_AUTH_TOKEN),
-      hasPublicBaseUrl: Boolean(process.env.PUBLIC_BASE_URL),
-    });
+    console.warn("Rejected Twilio caller ID status callback: signature validation failed");
     return res.status(403).type("text/plain").send("Invalid Twilio signature");
   }
-
-  const token = String(req.query?.token || "");
-  if (!/^[a-f0-9]{64}$/.test(token)) return res.status(200).type("text/plain").send("OK");
-
-  const tokenHash = hashCallbackToken(token);
-  const phoneNumber = String(req.body?.PhoneNumber || "").trim();
-  const status = String(req.body?.VerificationStatus || "").toLowerCase();
-  try {
-    if (status === "success" && E164.test(phoneNumber)) {
-      const verified = await completeVerification({ callerIdVerificationTokenHash: tokenHash }, phoneNumber);
-      logAttempt("info", verified ? "callback verified" : "callback ignored (not pending, expired, mismatched or replayed)", tokenHash);
-    } else {
-      const callerIdStatus = status === "expired" ? "expired" : "failed";
-      const updated = await User.findOneAndUpdate(
-        { callerIdStatus: "pending", callerIdVerificationTokenHash: tokenHash },
-        { callerIdStatus, callerIdVerificationMethod: null, ...clearPendingVerification() }
-      );
-      logAttempt("info", `callback ${callerIdStatus}`, tokenHash, { applied: Boolean(updated) });
-    }
-  } catch (error) {
-    console.error("Unable to save caller ID verification result", { code: error.code || null });
-    return res.status(500).type("text/plain").send("Unable to save verification");
+  const sessionId = String(req.query?.session || "");
+  const callStatus = String(req.body?.CallStatus || "").toLowerCase();
+  if (!/^[a-f0-9]{24}$/.test(sessionId) || !FAILED_CALL_STATUSES.includes(callStatus)) {
+    return res.status(200).type("text/plain").send("OK");
   }
-
+  try {
+    const updated = await User.findOneAndUpdate(
+      { callerIdStatus: "pending", callerIdVerificationSessionId: sessionId },
+      { callerIdStatus: "failed", callerIdVerificationMethod: null, ...clearPendingVerification() }
+    );
+    logAttempt("info", `voice call ${callStatus}`, sessionId, { applied: Boolean(updated) });
+  } catch (error) {
+    console.error("Unable to save caller ID call status", { code: error.code || null });
+    return res.status(500).type("text/plain").send("Unable to save status");
+  }
   return res.status(200).type("text/plain").send("OK");
 };
 
-exports._private = { developerTestNumbers, hashCallbackToken };
+exports._private = { developerTestNumbers, hashCode, spokenCodeTwiML, MAX_ATTEMPTS, VERIFICATION_TTL_MS };

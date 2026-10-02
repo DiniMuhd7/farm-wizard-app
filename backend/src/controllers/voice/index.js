@@ -63,7 +63,11 @@ function resolveCallerIdentity(caller) {
     caller?.verifiedCallerId &&
     E164.test(caller.verifiedCallerId) &&
     caller.callerIdStatus === "verified" &&
-    caller.callerIdVerificationMethod !== "developer_test";
+    // Only a number the provider itself approved as an outbound caller ID may
+    // be presented. A spoken-code (possession) verification proves ownership
+    // to 9tel but does not make the number provider-approved, so presenting
+    // it could be rejected or spoof; those accounts use the shared fallback.
+    (caller.callerIdVerificationMethod === "twilio" || !caller.callerIdVerificationMethod);
   if (verifiedIsAuthoritative) return { callerId: caller.verifiedCallerId, callerIdStatus: "verified" };
   const fallback = process.env.TWILIO_CALLER_ID;
   if (!fallback || !E164.test(fallback)) return null;
@@ -323,9 +327,11 @@ exports.outgoingDialStatus = async (req, res) => {
       } catch (error) {
         console.error("Unable to settle welcome reward:", error.message);
       }
-      if (dialCallStatus === "completed" && rewardOutcome !== "redeemed") {
+      // A redeemed free minute (or a redelivered event for one) is never
+      // also debited; Twilio's timeLimit already capped it at 60 seconds.
+      if (dialCallStatus === "completed" && rewardOutcome !== "redeemed" && rewardOutcome !== "replayed") {
         const { debitForCompletedCall } = require("../credits");
-        await debitForCompletedCall(match[1], Number(req.body?.DialCallDuration) || 0);
+        await debitForCompletedCall(match[1], Number(req.body?.DialCallDuration) || 0, String(req.body?.DialCallSid || req.body?.CallSid || "") || undefined);
       }
     }
   }

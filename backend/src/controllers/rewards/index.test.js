@@ -67,7 +67,79 @@ describe("rewards controller", () => {
 
   it("is a no-op for a call that held no reservation", async () => {
     WelcomeReward.findOneAndUpdate.mockResolvedValue(null);
+    WelcomeReward.findOne.mockReturnValue({ lean: async () => null });
     expect(await rewards.settleForCall("u1", "CA9", { connected: true, durationSeconds: 30 })).toBeNull();
+  });
+
+  it("recognizes a redelivered completion event for the call that already redeemed the reward", async () => {
+    WelcomeReward.findOneAndUpdate.mockResolvedValue(null);
+    WelcomeReward.findOne.mockReturnValue({ lean: async () => ({ state: "redeemed", redeemedCallSid: "CA1" }) });
+    expect(await rewards.settleForCall("u1", "CA1", { connected: true, durationSeconds: 45 })).toBe("replayed");
+    expect(WelcomeReward.findOne.mock.calls[0][0]).toMatchObject({ state: "redeemed", redeemedCallSid: "CA1" });
+  });
+
+  it("caps consumed seconds at the 60-second grant", async () => {
+    WelcomeReward.findOneAndUpdate.mockResolvedValue({});
+    await rewards.settleForCall("u1", "CA1", { connected: true, durationSeconds: 300 });
+    expect(WelcomeReward.findOneAndUpdate.mock.calls[0][1].usedSeconds).toBe(60);
+  });
+
+  it("lets exactly one of many concurrent reservations win", async () => {
+    // Emulates MongoDB's atomic compare-and-set on the single ledger row.
+    const row = { state: "available", grantedSeconds: 60, usedSeconds: 0 };
+    WelcomeReward.findOneAndUpdate.mockImplementation(async (filter, update) => {
+      const claimable = row.state === "available" || (row.state === "reserved" && row.reservedCallSid === filter.$or[1].reservedCallSid);
+      if (!claimable) return null;
+      Object.assign(row, update);
+      return { ...row };
+    });
+    const results = await Promise.all(["CA1", "CA2", "CA3", "CA4"].map((sid) => rewards.reserveForCall("u1", sid)));
+    expect(results.filter((seconds) => seconds === 60)).toHaveLength(1);
+    expect(results.filter((seconds) => seconds === 0)).toHaveLength(3);
+  });
+
+  describe("visible reward state", () => {
+    const row = (over) => ({ grantedSeconds: 60, usedSeconds: 0, state: "available", ...over });
+
+    it("maps ledger rows to available / in_use / redeemed", () => {
+      const { displayState } = rewards._private;
+      expect(displayState(row())).toEqual({ status: "available", seconds: 60 });
+      expect(displayState(row({ state: "reserved", reservedAt: new Date() }))).toEqual({ status: "in_use", seconds: 60 });
+      expect(displayState(row({ state: "redeemed", usedSeconds: 45 }))).toEqual({ status: "redeemed", seconds: 0 });
+    });
+
+    it("treats a stale reservation as available again", () => {
+      const stale = new Date(Date.now() - 60 * 60 * 1000);
+      expect(rewards._private.displayState(row({ state: "reserved", reservedAt: stale }))).toEqual({ status: "available", seconds: 60 });
+    });
+
+    it("keeps the reward separate from purchased credit when computing availability", () => {
+      const { effectiveAvailability } = rewards._private;
+      expect(effectiveAvailability("available", 0)).toBe("free_minute");
+      expect(effectiveAvailability("in_use", 0)).toBe("free_minute");
+      expect(effectiveAvailability("redeemed", 0)).toBe("none");
+      expect(effectiveAvailability("redeemed", 500)).toBe("credits");
+      expect(effectiveAvailability("verify_phone", 0)).toBe("none");
+    });
+
+    const mockRes = () => ({ set() {}, status(c) { this.code = c; return this; }, json(b) { this.body = b; return this; } });
+
+    it("returns the reward, granted seconds and effective availability without altering anything", async () => {
+      User.findById
+        .mockReturnValueOnce(leanUser({ isGuest: false, verifiedCallerId: "+15551230000", creditsBalanceCents: 0 }))
+        .mockReturnValueOnce(leanUser({ isGuest: false, status: "active", verifiedCallerId: "+15551230000", _id: "u1" }));
+      WelcomeReward.create.mockResolvedValue({ user: "u1", state: "available", grantedSeconds: 60, usedSeconds: 0 });
+      const res = mockRes();
+      await rewards.getWelcomeReward({ user: { _id: "u1" } }, res);
+      expect(res.body).toEqual({ status: "available", seconds: 60, grantedSeconds: 60, effectiveAvailability: "free_minute" });
+    });
+
+    it("asks unverified accounts to verify and never exposes a reward", async () => {
+      User.findById.mockReturnValueOnce(leanUser({ isGuest: false, verifiedCallerId: null, creditsBalanceCents: 0 }));
+      const res = mockRes();
+      await rewards.getWelcomeReward({ user: { _id: "u1" } }, res);
+      expect(res.body).toMatchObject({ status: "verify_phone", seconds: 0, grantedSeconds: 0, effectiveAvailability: "none" });
+    });
   });
 
   describe("getRewardDiagnostics", () => {

@@ -79,4 +79,39 @@ describe("credits controller", () => {
 
     expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
   });
+
+  describe("debitForCompletedCall idempotency", () => {
+    let BilledCall, User, credits;
+    beforeEach(() => {
+      jest.doMock("../../models/BilledCall", () => ({ create: jest.fn(), deleteOne: jest.fn() }));
+      BilledCall = require("../../models/BilledCall");
+      User = require("../../models/User");
+      credits = require("./index");
+    });
+
+    it("debits once and ignores a replayed webhook for the same call sid", async () => {
+      BilledCall.create.mockResolvedValueOnce({}).mockRejectedValueOnce(Object.assign(new Error("dup"), { code: 11000 }));
+      User.findByIdAndUpdate.mockResolvedValue({});
+      await credits.debitForCompletedCall("u1", 61, "CA1");
+      await credits.debitForCompletedCall("u1", 61, "CA1");
+      expect(User.findByIdAndUpdate).toHaveBeenCalledTimes(1);
+      expect(User.findByIdAndUpdate).toHaveBeenCalledWith("u1", { $inc: { creditsBalanceCents: -20 } });
+    });
+
+    it("releases the claim when the debit fails so a redelivery can bill it", async () => {
+      jest.spyOn(console, "error").mockImplementation(() => {});
+      BilledCall.create.mockResolvedValue({});
+      BilledCall.deleteOne.mockResolvedValue({});
+      User.findByIdAndUpdate.mockRejectedValue(new Error("db down"));
+      await credits.debitForCompletedCall("u1", 30, "CA2");
+      expect(BilledCall.deleteOne).toHaveBeenCalledWith({ callSid: "CA2" });
+    });
+
+    it("still debits when no call sid is available", async () => {
+      User.findByIdAndUpdate.mockResolvedValue({});
+      await credits.debitForCompletedCall("u1", 30);
+      expect(BilledCall.create).not.toHaveBeenCalled();
+      expect(User.findByIdAndUpdate).toHaveBeenCalledTimes(1);
+    });
+  });
 });

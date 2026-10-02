@@ -316,13 +316,15 @@ export default function Settings() {
                   <Text style={s.rowDetail}>
                     {callerIdMethod === "developer_test"
                       ? "Synthetic local/test state; calls use the configured Twilio caller ID"
-                      : "Shown to people you call, instead of the shared number"}
+                      : callerIdMethod === "spoken_code"
+                        ? "Verified as yours. Calls show 9tel's shared number until the provider approves yours"
+                        : "Shown to people you call, instead of the shared number"}
                   </Text>
                 </>
               ) : callerIdStatus === "pending" ? (
                 <>
                   <Text style={s.rowLabel}>Verification in progress</Text>
-                  <Text style={s.rowDetail}>Answer the automated call and follow its keypad instructions</Text>
+                  <Text style={s.rowDetail}>Enter the code spoken on the verification call in the app</Text>
                 </>
               ) : callerIdStatus === "failed" || callerIdStatus === "expired" ? (
                 <>

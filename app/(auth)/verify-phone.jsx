@@ -1,19 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import { router } from "expo-router";
-import { ActivityIndicator, Dimensions, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Dimensions, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { CheckCircle2, CircleAlert, PhoneCall, RefreshCcw, ShieldCheck, Sparkles } from "lucide-react-native";
 import { CustomButton, FormField } from "../../components";
-import { cancelCallerIdVerification, getCallerIdVerificationStatus, startCallerIdVerification } from "@/services/callerid";
+import { cancelCallerIdVerification, getCallerIdVerificationStatus, startCallerIdVerification, submitCallerIdCode } from "@/services/callerid";
 
 const E164 = /^\+[1-9]\d{6,14}$/;
 const POLL_INTERVAL_MS = 3000;
-const POLL_TIMEOUT_MS = 10 * 60 * 1000 + 5000;
+const CODE_LENGTH = 6;
+const DEFAULT_TTL_MS = 5 * 60 * 1000;
 const RESEND_COOLDOWN_SECONDS = 30;
 
 const STEPS = [
   { id: "number", label: "Enter number" },
-  { id: "call", label: "Answer call" },
+  { id: "call", label: "Listen & enter code" },
   { id: "done", label: "Confirmed" },
 ];
 
@@ -26,10 +27,13 @@ export default function VerifyPhone() {
   const [verifiedNumber, setVerifiedNumber] = useState("");
   const [verificationMethod, setVerificationMethod] = useState("twilio");
   const [resendCooldown, setResendCooldown] = useState(0);
-  // Held in memory only for the current attempt; never persisted or logged.
-  const [validationCode, setValidationCode] = useState("");
+  // The code the person heard on the call. Held in component state only while
+  // typing; never persisted, logged or sent anywhere but the verify request.
+  const [enteredCode, setEnteredCode] = useState("");
+  const [secondsLeft, setSecondsLeft] = useState(0);
+  const [attemptsRemaining, setAttemptsRemaining] = useState(null);
   const pollRef = useRef(null);
-  const pollDeadlineRef = useRef(0);
+  const expiresAtRef = useRef(0);
   const redirectTimeoutRef = useRef(null);
 
   useEffect(() => {
@@ -47,6 +51,14 @@ export default function VerifyPhone() {
     return () => clearInterval(timer);
   }, [resendCooldown]);
 
+  useEffect(() => {
+    if (verificationState !== "calling") return;
+    const tick = () => setSecondsLeft(Math.max(0, Math.ceil((expiresAtRef.current - Date.now()) / 1000)));
+    tick();
+    const timer = setInterval(tick, 1000);
+    return () => clearInterval(timer);
+  }, [verificationState]);
+
   const stopPolling = () => {
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -61,46 +73,57 @@ export default function VerifyPhone() {
       redirectTimeoutRef.current = null;
     }
     setVerificationState("entry");
-    setValidationCode("");
+    setEnteredCode("");
+    setAttemptsRemaining(null);
     setVerifiedNumber("");
     setStatusMessage("");
     setError("");
     setResendCooldown(0);
   };
 
+  const showVerified = (number, method) => {
+    stopPolling();
+    setEnteredCode("");
+    setVerifiedNumber(number);
+    setVerificationMethod(method || "spoken_code");
+    setVerificationState("success");
+    setError("");
+    setStatusMessage("Your number is verified.");
+    redirectTimeoutRef.current = setTimeout(() => {
+      router.replace("/(tabs)/home");
+    }, 2500);
+  };
+
+  const showFailed = (callerIdStatus) => {
+    stopPolling();
+    setEnteredCode("");
+    setVerificationState("failed");
+    setError(
+      callerIdStatus === "expired"
+        ? "This code expired. Request a new call to get a new code."
+        : "The verification could not be completed. Request a new call to try again."
+    );
+    setStatusMessage("Your caller ID is still unverified. You can still place calls.");
+  };
+
+  // The backend is the only authority on state. Polling picks up expiry,
+  // provider call failures, and a verification completed elsewhere.
   const startPolling = (expectedNumber) => {
     stopPolling();
-    pollDeadlineRef.current = Date.now() + POLL_TIMEOUT_MS;
     pollRef.current = setInterval(async () => {
-      if (Date.now() > pollDeadlineRef.current) {
-        stopPolling();
-        setValidationCode("");
-        setVerificationState("failed");
-        setError("This verification attempt expired. Request another call to try again.");
-        setStatusMessage("Your number remains unverified until the server receives Twilio’s confirmation.");
-        return;
-      }
       try {
         const status = await getCallerIdVerificationStatus();
+        // Ignore a response that lands after polling was stopped (e.g. the
+        // code was just accepted), so a stale poll cannot undo the result.
+        if (!pollRef.current) return;
         if (status.callerIdStatus === "verified" && status.verifiedCallerId === expectedNumber) {
-          stopPolling();
-          setValidationCode("");
-          setVerifiedNumber(status.verifiedCallerId);
-          setVerificationMethod(status.method || "twilio");
-          setVerificationState("success");
-          setError("");
-          setStatusMessage("Your verified caller ID is ready. Future outbound calls can show this number.");
-          redirectTimeoutRef.current = setTimeout(() => {
-            router.replace("/(tabs)/home");
-          }, 2500);
+          showVerified(status.verifiedCallerId, status.method);
         } else if (status.callerIdStatus === "failed" || status.callerIdStatus === "expired") {
-          stopPolling();
-          setValidationCode("");
-          setVerificationState("failed");
-          setError(status.callerIdStatus === "expired"
-            ? "This verification attempt expired. Request another call to try again."
-            : "The call did not confirm your number. Check that you entered the spoken code on the phone keypad, then retry.");
-          setStatusMessage("Your caller ID is still unverified.");
+          showFailed(status.callerIdStatus);
+        } else if (status.callerIdStatus === "pending" && typeof status.attemptsRemaining === "number") {
+          setAttemptsRemaining(status.attemptsRemaining);
+        } else if (status.callerIdStatus === "unverified") {
+          resetToEntry();
         }
       } catch {
         // Transient status checks should not interrupt the in-progress state.
@@ -115,8 +138,10 @@ export default function VerifyPhone() {
         if (!active) return;
         if (status.callerIdStatus === "pending" && status.phoneNumber) {
           setPhoneNumber(status.phoneNumber);
+          expiresAtRef.current = status.expiresAt ? new Date(status.expiresAt).getTime() : Date.now() + DEFAULT_TTL_MS;
+          if (typeof status.attemptsRemaining === "number") setAttemptsRemaining(status.attemptsRemaining);
           setVerificationState("calling");
-          setStatusMessage(`We’re calling ${status.phoneNumber}. Answer and enter the spoken code on your phone keypad.`);
+          setStatusMessage(`Enter the ${CODE_LENGTH}-digit code spoken on the call to ${status.phoneNumber}.`);
           startPolling(status.phoneNumber);
         } else if (
           status.callerIdStatus === "verified" &&
@@ -127,14 +152,10 @@ export default function VerifyPhone() {
           setVerifiedNumber(verifiedNumber);
           setVerificationMethod(status.method || "twilio");
           setVerificationState("success");
-          setStatusMessage("Your verified caller ID is ready. Future outbound calls can show this number.");
+          setStatusMessage("Your number is verified.");
         } else if (status.callerIdStatus === "failed" || status.callerIdStatus === "expired") {
           if (status.phoneNumber) setPhoneNumber(status.phoneNumber);
-          setVerificationState("failed");
-          setError(status.callerIdStatus === "expired"
-            ? "This verification attempt expired. Request another call to try again."
-            : "The call did not confirm your number. Check that you entered the spoken code on the phone keypad, then retry.");
-          setStatusMessage("Your caller ID is still unverified.");
+          showFailed(status.callerIdStatus);
         }
       })
       .catch(() => {});
@@ -163,16 +184,58 @@ export default function VerifyPhone() {
         setVerificationState("success");
         setStatusMessage(result.message || "Developer test verification completed. No provider call was placed.");
       } else {
-        setValidationCode(result.validationCode || "");
+        expiresAtRef.current = result.expiresAt ? new Date(result.expiresAt).getTime() : Date.now() + DEFAULT_TTL_MS;
+        setEnteredCode("");
+        setAttemptsRemaining(null);
         setVerificationState("calling");
-        setStatusMessage(result.message || `We’re calling ${trimmed}. Answer and enter the spoken code on your phone keypad.`);
+        setStatusMessage(result.message || `We’re calling ${trimmed}. Answer, listen for the code, then enter it here.`);
         setResendCooldown(RESEND_COOLDOWN_SECONDS);
         startPolling(trimmed);
       }
     } catch (err) {
       const message = err?.message || "Unable to start verification right now.";
       setError(message);
-      setVerificationState("entry");
+      if (err?.code === "resend_cooldown" || err?.code === "verification_pending") {
+        setResendCooldown(RESEND_COOLDOWN_SECONDS);
+      } else {
+        setVerificationState("entry");
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitCode = async () => {
+    if (!new RegExp(`^\\d{${CODE_LENGTH}}$`).test(enteredCode) || submitting) {
+      setError(`Enter the ${CODE_LENGTH}-digit code you heard on the call.`);
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      const result = await submitCallerIdCode(enteredCode);
+      // Refresh from the server so the UI reflects persisted state.
+      const status = await getCallerIdVerificationStatus().catch(() => null);
+      showVerified(status?.verifiedCallerId || result.verifiedCallerId || phoneNumber, status?.method || result.method);
+    } catch (err) {
+      setEnteredCode("");
+      if (typeof err?.attemptsRemaining === "number") setAttemptsRemaining(err.attemptsRemaining);
+      if (err?.code === "verification_expired") {
+        showFailed("expired");
+      } else if (err?.code === "too_many_attempts") {
+        showFailed("failed");
+        setError("Too many incorrect codes. Request a new call to get a new code.");
+      } else if (err?.code === "no_active_verification") {
+        // Another request may already have completed this session.
+        const status = await getCallerIdVerificationStatus().catch(() => null);
+        if (status?.callerIdStatus === "verified" && status.verifiedCallerId) {
+          showVerified(status.verifiedCallerId, status.method);
+        } else {
+          showFailed("failed");
+        }
+      } else {
+        setError(err?.message || "Unable to verify that code right now. Try again.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -206,7 +269,7 @@ export default function VerifyPhone() {
             </View>
             <Text style={styles.title}>Verify your number</Text>
             <Text style={styles.subtitle}>
-              Use your own number as caller ID on supported 9tel calls. Verification happens by automated voice call, never by a client-side-only confirmation.
+              Use your own number as caller ID on supported 9tel calls. We call your number and speak a one-time code; you enter it here. Only our server can confirm it.
             </Text>
           </View>
 
@@ -234,7 +297,7 @@ export default function VerifyPhone() {
                 <View style={styles.sectionCopy}>
                   <Text style={styles.sectionTitle}>Step 1 · Enter the number you want to show</Text>
                   <Text style={styles.sectionBody}>
-                    Include the country code. We will show a code here, then call this number. Answer and enter that code on your phone keypad.
+                    Include the country code. We will call this number and speak a 6-digit code. Then enter that code here in the app.
                   </Text>
                 </View>
               </View>
@@ -271,7 +334,7 @@ export default function VerifyPhone() {
               />
 
               <Text style={styles.helpText}>
-                We only mark your number verified after the server receives Twilio’s confirmation callback.
+                Your number is only marked verified after our server checks the code you enter. Verification is optional; you can still place calls without it.
               </Text>
 
               <Pressable accessibilityRole="button" onPress={() => router.replace("/(tabs)/home")} style={styles.skipLink}>
@@ -287,31 +350,47 @@ export default function VerifyPhone() {
                   <PhoneCall size={18} color="#FFF" />
                 </View>
                 <View style={styles.sectionCopy}>
-                  <Text style={styles.sectionTitle}>Step 2 · Answer the call</Text>
+                  <Text style={styles.sectionTitle}>Step 2 · Listen and enter the code</Text>
                   <Text style={styles.sectionBody}>
-                    When the call connects, enter the code below on your phone keypad.
+                    Answer the call and listen for the 6-digit code (it is repeated once). The code is never shown on screen.
                   </Text>
                 </View>
               </View>
 
-              {validationCode ? (
-                <View
-                  style={styles.codeCard}
-                  accessible
-                  accessibilityRole="text"
-                  accessibilityLabel={`Your verification code is ${validationCode.split("").join(" ")}`}
-                >
-                  <Text style={styles.codeLabel}>YOUR VERIFICATION CODE</Text>
-                  <Text style={styles.codeValue}>{validationCode}</Text>
-                  <Text style={styles.codeHint}>Valid for this call only. Don&apos;t share it.</Text>
-                </View>
-              ) : (
-                <View style={[styles.statusCard, styles.statusInfo]}>
-                  <Text style={styles.statusText}>
-                    The code is only shown when a call is requested. Tap &quot;Call again&quot; to get a new code.
-                  </Text>
-                </View>
-              )}
+              <TextInput
+                style={styles.codeInput}
+                value={enteredCode}
+                onChangeText={(value) => {
+                  setEnteredCode(value.replace(/\D/g, "").slice(0, CODE_LENGTH));
+                  if (error) setError("");
+                }}
+                placeholder="------"
+                placeholderTextColor="#B9B6CF"
+                keyboardType="number-pad"
+                maxLength={CODE_LENGTH}
+                autoComplete="one-time-code"
+                textContentType="oneTimeCode"
+                autoCorrect={false}
+                secureTextEntry={false}
+                editable={!submitting && secondsLeft > 0}
+                accessibilityLabel="Verification code from the call"
+                onSubmitEditing={submitCode}
+              />
+              <Text style={styles.codeHint}>
+                {secondsLeft > 0
+                  ? `Code expires in ${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, "0")}${
+                      attemptsRemaining !== null ? ` · ${attemptsRemaining} ${attemptsRemaining === 1 ? "try" : "tries"} left` : ""
+                    }`
+                  : "This code has expired. Tap “Call again” for a new one."}
+              </Text>
+
+              <CustomButton
+                title="Verify code"
+                handlePress={submitCode}
+                containerStyles="w-full mt-4"
+                isLoading={submitting}
+                disabled={submitting || enteredCode.length !== CODE_LENGTH || secondsLeft <= 0}
+              />
 
               {!!statusMessage && (
                 <View style={[styles.statusCard, styles.statusInfo]}>
@@ -346,7 +425,7 @@ export default function VerifyPhone() {
               </View>
 
               <Text style={styles.helpText}>
-                Canceling invalidates this attempt; it cannot stop a provider call that has already started.
+                Canceling invalidates this code; it cannot stop a call that has already started.
               </Text>
               <Pressable accessibilityRole="button" onPress={() => router.replace("/(tabs)/home")} style={styles.skipLink}>
                 <Text style={styles.skipLinkText}>I&apos;ll verify later</Text>
@@ -361,7 +440,7 @@ export default function VerifyPhone() {
                 <Text style={[styles.statusText, styles.statusTextError]}>{error}</Text>
               </View>
               <Text style={styles.sectionBody}>
-                {statusMessage || "Your caller ID stays unverified until Twilio confirms the call. You can safely request a new call."}
+                {statusMessage || "Your caller ID stays unverified until you enter a valid code. You can safely request a new call."}
               </Text>
               <CustomButton
                 title="Try again"
@@ -390,7 +469,7 @@ export default function VerifyPhone() {
               <Text style={styles.successBody}>
                 {verificationMethod === "developer_test"
                   ? `${verifiedNumber || phoneNumber} is allowlisted for this local/test run. Outbound calls continue to use the configured Twilio caller ID.`
-                  : `${verifiedNumber || phoneNumber} is now ready to use as your caller ID when supported by the service.`}
+                  : `${verifiedNumber || phoneNumber} is verified as yours. Calls keep showing 9tel's shared number until the voice provider approves your number as an outbound caller ID.`}
               </Text>
 
               <View style={[styles.statusCard, styles.statusSuccess]}>
@@ -417,16 +496,18 @@ export default function VerifyPhone() {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: "#F8F8FD" },
-  codeCard: {
+  codeInput: {
     backgroundColor: "#EFEDFF",
     borderRadius: 16,
-    paddingVertical: 18,
-    alignItems: "center",
+    paddingVertical: 14,
     marginTop: 12,
+    textAlign: "center",
+    color: "#211B59",
+    fontFamily: "Poppins-SemiBold",
+    fontSize: 32,
+    letterSpacing: 10,
   },
-  codeLabel: { color: "#5147AF", fontFamily: "Poppins-SemiBold", fontSize: 11, letterSpacing: 0.9 },
-  codeValue: { color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 40, letterSpacing: 8, marginTop: 4 },
-  codeHint: { color: "#6B6785", fontFamily: "Poppins-Regular", fontSize: 12, marginTop: 4 },
+  codeHint: { color: "#6B6785", fontFamily: "Poppins-Regular", fontSize: 12, marginTop: 8, textAlign: "center" },
   scroll: { flexGrow: 1 },
   page: {
     minHeight: Dimensions.get("window").height - 48,

@@ -14,6 +14,7 @@ jest.mock("../../utils/twilioSignature", () => ({
   escapedXml: (value) => String(value).replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[c])),
 }));
 jest.mock("../../models/User", () => ({ findById: jest.fn(), findOne: jest.fn() }));
+jest.mock("../../models/Call", () => ({ create: jest.fn() }));
 jest.mock("../credits", () => ({ RATE_PER_MINUTE_CENTS: 9, debitForCompletedCall: jest.fn() }));
 jest.mock("../rewards", () => ({
   ensureWelcomeReward: jest.fn(),
@@ -274,5 +275,63 @@ describe("voice controller — outgoingCallTwiML welcome-reward precedence", () 
 
     expect(rewards.ensureWelcomeReward).not.toHaveBeenCalled();
     expect(res.body).toContain("do not have enough credit");
+  });
+});
+
+describe("voice controller — caller identity and reward settlement", () => {
+  const USER_ID = "507f1f77bcf86cd799439011";
+  let voice, credits, rewards;
+
+  beforeEach(() => {
+    jest.resetModules();
+    process.env.TWILIO_CALLER_ID = "+15550000000";
+    voice = require("./index");
+    credits = require("../credits");
+    rewards = require("../rewards");
+    credits.debitForCompletedCall.mockReset();
+    rewards.settleForCall.mockReset();
+  });
+
+  it("presents only provider-approved verified numbers; spoken-code numbers use the shared fallback", () => {
+    const { resolveCallerIdentity } = voice._private;
+    const base = { verifiedCallerId: "+15551230000", callerIdStatus: "verified" };
+    expect(resolveCallerIdentity({ ...base, callerIdVerificationMethod: "twilio" }).callerId).toBe("+15551230000");
+    expect(resolveCallerIdentity({ ...base, callerIdVerificationMethod: "spoken_code" })).toEqual({ callerId: "+15550000000", callerIdStatus: "unverified" });
+    expect(resolveCallerIdentity({ ...base, callerIdVerificationMethod: "developer_test" }).callerId).toBe("+15550000000");
+    expect(resolveCallerIdentity({ callerIdStatus: "unverified" })).toEqual({ callerId: "+15550000000", callerIdStatus: "unverified" });
+  });
+
+  function statusReq(overrides = {}) {
+    return {
+      query: {},
+      body: { From: `client:user-${USER_ID}`, To: "+15559876543", CallSid: "CAparent", DialCallStatus: "completed", DialCallDuration: "60", ...overrides },
+    };
+  }
+  const res = () => ({ type() { return this; }, send(b) { this.body = b; return this; }, status() { return this; } });
+
+  it("does not debit credits for a call that redeemed the free minute", async () => {
+    rewards.settleForCall.mockResolvedValue("redeemed");
+    await voice.outgoingDialStatus(statusReq(), res());
+    expect(rewards.settleForCall).toHaveBeenCalledWith(USER_ID, "CAparent", { connected: true, durationSeconds: 60 });
+    expect(credits.debitForCompletedCall).not.toHaveBeenCalled();
+  });
+
+  it("does not bill a replayed completion event for a redeemed reward", async () => {
+    rewards.settleForCall.mockResolvedValue("replayed");
+    await voice.outgoingDialStatus(statusReq(), res());
+    expect(credits.debitForCompletedCall).not.toHaveBeenCalled();
+  });
+
+  it("releases the reservation and does not bill when the call never connected", async () => {
+    rewards.settleForCall.mockResolvedValue("released");
+    await voice.outgoingDialStatus(statusReq({ DialCallStatus: "no-answer", DialCallDuration: "0" }), res());
+    expect(rewards.settleForCall).toHaveBeenCalledWith(USER_ID, "CAparent", { connected: false, durationSeconds: 0 });
+    expect(credits.debitForCompletedCall).not.toHaveBeenCalled();
+  });
+
+  it("bills purchased credit with the provider duration when no reward was held", async () => {
+    rewards.settleForCall.mockResolvedValue(null);
+    await voice.outgoingDialStatus(statusReq({ DialCallDuration: "125" }), res());
+    expect(credits.debitForCompletedCall).toHaveBeenCalledWith(USER_ID, 125, "CAparent");
   });
 });

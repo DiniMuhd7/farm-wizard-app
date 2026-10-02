@@ -23,16 +23,31 @@ exports.RATE_PER_MINUTE_CENTS = RATE_PER_MINUTE_CENTS;
 exports.CURRENCY = CURRENCY;
 
 // Deducts the cost of a completed carrier call from a user's balance.
-// Idempotency note: this is called once per Twilio DialCallStatus webhook
-// delivery (see controllers/voice's outgoingDialStatus) — a redelivered
-// webhook for the same callSid is a known, accepted gap shared with that
-// function's existing call-history logging, not something introduced here.
-exports.debitForCompletedCall = async (userId, durationSeconds) => {
+// Idempotent per provider call sid: a BilledCall row with a unique callSid is
+// claimed before the debit, so a redelivered/replayed Twilio webhook (or two
+// concurrent deliveries) debits at most once. If the debit itself fails the
+// claim is released so a later redelivery can bill the call. Without a sid
+// there is nothing to dedupe on, so the debit is applied as before.
+exports.debitForCompletedCall = async (userId, durationSeconds, callSid) => {
   if (!durationSeconds) return;
   const minutes = Math.max(1, Math.ceil(Number(durationSeconds) / 60) || 0);
   const costCents = minutes * RATE_PER_MINUTE_CENTS;
+  const BilledCall = callSid ? require("../../models/BilledCall") : null;
   try {
-    await User.findByIdAndUpdate(userId, { $inc: { creditsBalanceCents: -costCents } });
+    if (BilledCall) {
+      try {
+        await BilledCall.create({ callSid, user: userId, costCents });
+      } catch (error) {
+        if (error?.code === 11000) return;
+        throw error;
+      }
+    }
+    try {
+      await User.findByIdAndUpdate(userId, { $inc: { creditsBalanceCents: -costCents } });
+    } catch (error) {
+      if (BilledCall) await BilledCall.deleteOne({ callSid }).catch(() => {});
+      throw error;
+    }
   } catch (error) {
     console.error("Unable to debit credits for completed call:", error.message);
   }

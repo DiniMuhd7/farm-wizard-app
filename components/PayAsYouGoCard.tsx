@@ -5,7 +5,7 @@ import { CheckCircle2, CircleAlert, Gift, PhoneForwarded } from "lucide-react-na
 import { CREDIT_PACKS, formatCents } from "@/constants/creditPacks";
 import { createCreditsFlutterwaveCheckout, createCreditsStripeCheckout, getCreditsBalance, type CreditsBalance } from "@/services/credits";
 import { getOrderStatus, toPaymentInitError } from "@/services/payments";
-import type { WelcomeRewardStatus } from "@/services/rewards";
+import { describeEffectiveAvailability, describeWelcomeReward, type WelcomeRewardStatus } from "@/services/rewards";
 
 interface Props {
   welcomeReward?: WelcomeRewardStatus | null;
@@ -67,7 +67,8 @@ export default function PayAsYouGoCard({ welcomeReward, welcomeRewardLoading = f
     }
   };
 
-  const rewardMinutes = Math.max(1, Math.round((welcomeReward?.seconds || 0) / 60));
+  const rewardDisplay = describeWelcomeReward(welcomeReward);
+  const hasPurchasedCredit = balance ? balance.balanceCents >= balance.ratePerMinuteCents : false;
 
   return (
     <View>
@@ -75,21 +76,14 @@ export default function PayAsYouGoCard({ welcomeReward, welcomeRewardLoading = f
         <View style={s.rewardHeader}>
           <View style={s.rewardIconWrap}><Gift size={17} color="#5147AF" /></View>
           <View style={s.rewardCopy}>
-            <Text style={s.rewardTitle}>New-user mobile reward</Text>
+            <Text style={s.rewardTitle}>Introductory carrier-call reward</Text>
             {welcomeRewardLoading ? (
-              <Text style={s.rewardBody}>Checking your current reward eligibility…</Text>
-            ) : welcomeReward?.status === "available" ? (
-              <Text style={s.rewardBody}>
-                Your first {rewardMinutes} minute to a local mobile number is available and applies automatically when the backend confirms eligibility.
-              </Text>
-            ) : welcomeReward?.status === "verify_phone" ? (
-              <Text style={s.rewardBody}>
-                Verify your own phone number to unlock the one-minute new-user reward for local-carrier calls.
-              </Text>
-            ) : welcomeReward?.status === "redeemed" ? (
-              <Text style={s.rewardBody}>Your new-user reward has already been used on a previous eligible mobile call.</Text>
+              <Text style={s.rewardBody}>Checking your current reward…</Text>
             ) : (
-              <Text style={s.rewardBody}>No welcome reward is currently attached to this account.</Text>
+              <>
+                <Text style={s.rewardValue}>{rewardDisplay.title}</Text>
+                <Text style={s.rewardBody}>{rewardDisplay.detail}</Text>
+              </>
             )}
           </View>
         </View>
@@ -103,11 +97,14 @@ export default function PayAsYouGoCard({ welcomeReward, welcomeRewardLoading = f
       <View style={s.balanceCard}>
         <View style={s.iconWrap}><PhoneForwarded size={16} color="#5147AF" /></View>
         <View style={s.balanceCopy}>
-          <Text style={s.balanceLabel}>Available balance for local-carrier calls</Text>
+          <Text style={s.balanceLabel}>Purchased credit balance</Text>
           {balance ? (
             <>
               <Text style={s.balanceValue}>{formatCents(balance.balanceCents)}</Text>
               <Text style={s.balanceMeta}>Current billed rate: {formatCents(balance.ratePerMinuteCents)} per minute</Text>
+              {!welcomeRewardLoading && (
+                <Text style={s.availability}>{describeEffectiveAvailability(welcomeReward, hasPurchasedCredit)}</Text>
+              )}
             </>
           ) : loadError ? (
             <Pressable onPress={loadBalance} style={s.inlineRetry}>
@@ -158,6 +155,8 @@ const s = StyleSheet.create({
   rewardIconWrap: { width: 36, height: 36, borderRadius: 14, backgroundColor: "#EEECFF", alignItems: "center", justifyContent: "center" },
   rewardCopy: { flex: 1 },
   rewardTitle: { color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 14 },
+  rewardValue: { color: "#5147AF", fontFamily: "Poppins-SemiBold", fontSize: 13, marginTop: 4 },
+  availability: { color: "#211B59", fontFamily: "Poppins-Medium", fontSize: 11, marginTop: 6 },
   rewardBody: { color: "#5D5A76", fontFamily: "Poppins-Regular", fontSize: 11, lineHeight: 17, marginTop: 4 },
   rewardButton: { marginTop: 14, minHeight: 46, borderRadius: 14, backgroundColor: "#F3F1FF", alignItems: "center", justifyContent: "center" },
   rewardButtonText: { color: "#5147AF", fontFamily: "Poppins-SemiBold", fontSize: 12 },

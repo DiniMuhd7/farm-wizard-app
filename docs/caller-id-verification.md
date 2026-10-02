@@ -1,27 +1,38 @@
-# Caller-ID verification
+# Caller-ID verification (spoken code + app entry)
 
-## Why SMS did not work
+## Flow
 
-Twilio does not accept an SMS/Twilio Verify OTP as proof for an outgoing caller ID. Its Outgoing Caller ID resource requires Twilio to call the number and the person to enter the code read during that call. Twilio Verify can confirm phone ownership for authentication, but does not authorize the number as a caller ID. 9tel therefore uses Twilio's supported voice validation request and trusts only its signed callback.
+1. The signed-in user submits an E.164 number to `POST /api/v1/callerid/start`.
+2. The backend creates a server-side, one-time session: a random 6-digit code (`crypto.randomInt`), a random session id (also the correlation id), a 5-minute expiry and an attempt counter. Only a keyed HMAC of the code (bound to user, session and number, key `JWT_SECRET`) is stored — never the code.
+3. The backend asks Twilio to place a call (`calls.create`) from `TWILIO_CALLER_ID` whose TwiML **speaks** the code twice. The old keypad/DTMF IVR (`validationRequests`) is gone, so there is no entry loop.
+4. The user types the code into the 9tel app, which sends `POST /api/v1/callerid/verify { code }`.
+5. The backend validates it against the authenticated user's active session and flips the account to `verified` with a compare-and-set update, so a session can be consumed exactly once.
 
-The app never receives, displays, or logs the provider's validation code. The person answers the call and enters the spoken code on the phone keypad. Caller-ID state is persisted and changes to `verified` only for the current, unexpired attempt when Twilio returns a valid signed success callback.
+## Security model
+
+- **Code secrecy.** The code exists only in the TwiML sent to Twilio and on the call; it is not returned by any endpoint, not displayed in the app, and not logged by the app, analytics or the backend. (Twilio retains call resources per its own retention settings — treat the Twilio account as trusted.)
+- **Ownership.** All endpoints require auth (`protect`); sessions live on the authenticated user's record, so one user cannot submit against another's session. A number already verified on another account is refused (`caller_id_in_use`), also enforced by the unique index on `verifiedCallerId`.
+- **Limits.** 5-minute expiry; max 5 guesses per session, counted atomically *before* comparison (parallel guesses cannot exceed it); the session is failed on exhaustion; 30-second server-side resend cooldown that cancel-and-restart cannot bypass; per-IP and per-user route rate limits on `start` (3/min/user), `verify` (10/min/user), `status`, `cancel`.
+- **Replay/concurrency.** Completion filters on `status=pending`, session id, number and unexpired; of any number of concurrent or repeated submissions one succeeds, the rest get `409 no_active_verification`. A used code cannot be reused.
+- **Provider honesty.** If Twilio rejects the call, the session is persisted as `failed` and a safe error is returned. Twilio's signed `POST /api/v1/callerid/call-status` callback can only mark the matching pending session `failed` when the call is `failed`/`busy`/`no-answer`/`canceled`; it never verifies anything.
+- **Correlation.** Responses carry `correlationId` (and `X-Correlation-ID`); logs use the same id. It is not secret and reveals nothing about the code.
+- **Outbound identity.** Spoken-code verification proves possession to 9tel but does **not** make the number provider-approved. Outbound calls therefore keep using the Twilio-owned `TWILIO_CALLER_ID` unless the number was approved by Twilio (legacy `twilio` method). Verification is never required to place calls. Verified numbers still unlock the introductory carrier-call reward.
+
+Lifecycle: `unverified` → `pending` → `verified`, with `failed` and `expired` terminal attempt states. Error codes from `/verify`: `invalid_code_format` (400), `incorrect_code` (400, with `attemptsRemaining`), `verification_expired` (410), `too_many_attempts` (429), `no_active_verification` (409), `caller_id_in_use` (409).
 
 ## Production setup
 
-Configure these values in the **backend** environment (for example Render → the `ninetel-backend-api` service → Environment):
+Backend environment (for example Render → `ninetel-backend-api` → Environment):
 
-1. `TWILIO_ACCOUNT_SID` — the Twilio account SID used by the backend.
-2. `TWILIO_AUTH_TOKEN` — that account's Auth Token; keep it server-side.
-3. `PUBLIC_BASE_URL` — the public HTTPS backend origin, with no trailing slash. It must exactly match the externally visible host used for Twilio signature validation.
-4. `TWILIO_CALLER_ID` — an E.164 number owned by the Twilio account; required for outbound calls when a user has no provider-verified caller ID. It is not needed to initiate caller-ID verification itself.
+1. `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` — server-side only.
+2. `TWILIO_CALLER_ID` — an E.164 number owned by the Twilio account. **Now required for verification**: it is the `from` of the code call (and the outbound fallback identity).
+3. `PUBLIC_BASE_URL` — public HTTPS origin, no trailing slash, exactly the externally visible host (used for Twilio signature validation). Twilio must reach `https://<origin>/api/v1/callerid/call-status?session=<id>`; no console registration is needed, the URL is supplied per call.
+4. `JWT_SECRET` — also keys the code HMAC.
+5. `NODE_ENV=production` (disables developer test mode).
 
-Enable Twilio Voice calling permissions for the countries whose numbers users can verify. The backend submits Twilio's Outgoing Caller ID validation request; Twilio calls the submitted number and sends its result to the callback URL supplied with that request. No separate callback URL registration in the Twilio console is needed. `PUBLIC_BASE_URL` must resolve publicly over HTTPS so Twilio can reach:
+Enable Twilio Voice geo-permissions for the countries whose numbers users verify. A missing setting returns `caller_id_configuration_error` with setting **names only**.
 
-`https://<your-backend-origin>/api/v1/callerid/callback?token=<per-attempt-token>`
-
-The callback URL is generated per attempt and includes an unguessable correlation token. Do not put Twilio credentials or validation codes in the mobile app or client-visible configuration. A missing required setting returns `caller_id_configuration_error` with missing setting **names only**; provider failures return a separate safe code and actionable message.
-
-Set `NODE_ENV=production` in production. The developer test mode is disabled there regardless of its environment values.
+Deployment note: this release replaces `callerIdVerificationTokenHash` with new session fields and removes `POST /api/v1/callerid/callback`. Attempts pending at deploy time simply expire (5 minutes); no data migration is required. Deploy the backend before the app build.
 
 ## Local/test workflow
 
@@ -36,16 +47,6 @@ Replace the sample with a reserved/non-routable E.164 fixture used only in an is
 
 This mode is unsuitable for proving real ownership or testing live caller-ID presentation. For provider integration tests, omit both developer test settings and configure the real Twilio values above. Keep test accounts/database isolated from production.
 
-## Lifecycle and controls
+## Local/test note
 
-The persisted lifecycle is `unverified` → `pending` → `verified`, with `failed` and `expired` terminal attempt states. A retry starts a new provider attempt; cancel invalidates its callback token, so a late callback cannot verify the number. Starting a new verification clears the previous active caller ID. Authenticated status/start/cancel endpoints are owner-scoped and rate-limited. Twilio callbacks require Twilio signature validation, a one-time per-attempt token, the exact pending number, and an unexpired attempt.
-
-At call setup the backend uses a caller ID only when it is persisted as verified by Twilio (legacy verified records remain supported). Unverified, failed, expired, pending, and synthetic developer-test IDs use the Twilio-owned fallback number. Client state is never authoritative for outbound calls.
-
-## Verification call keeps asking for the code
-
-The spoken prompt ("enter your verification code") is hosted and run by Twilio's Outgoing Caller ID validation call; 9tel has no `<Gather>`/TwiML of its own for this flow, so the server cannot change the IVR's retry behaviour. 9tel controls two things: the code shown in the app, and whether the result reaches the backend.
-
-- The code is valid only for the **latest** `validationRequests.create` call for that number. Requesting "Call again" issues a new code and invalidates the previous one, and a code is never retrievable after the start response. Enter the code currently shown in the app, on the call that was placed for it.
-- The backend now also reconciles a `pending` attempt on every status poll by asking Twilio whether the number became an outgoing caller ID *after the attempt started*. If it did, the attempt is completed (atomically, once) even when the signed callback never arrived — for example because `PUBLIC_BASE_URL` does not match the public URL (signature rejected with 403) or the backend was unreachable. The app's existing status polling then shows the final state.
-- Callback and reconciliation outcomes are logged with a non-secret `correlationId` (prefix of the one-way token hash); codes, tokens and phone numbers are not logged.
+The developer test mode above never creates a session or places a call.

@@ -1,11 +1,5 @@
-const crypto = require("crypto");
-
-const mockValidationRequestsCreate = jest.fn();
-const mockOutgoingCallerIdsList = jest.fn();
-jest.mock("twilio", () => jest.fn(() => ({
-  validationRequests: { create: mockValidationRequestsCreate },
-  outgoingCallerIds: { list: mockOutgoingCallerIdsList },
-})));
+const mockCallsCreate = jest.fn();
+jest.mock("twilio", () => jest.fn(() => ({ calls: { create: mockCallsCreate } })));
 jest.mock("../../models/User", () => ({
   findOne: jest.fn(),
   findById: jest.fn(),
@@ -20,13 +14,16 @@ function mockRes() {
   return {
     statusCode: undefined,
     body: undefined,
-    contentType: undefined,
+    headers: {},
+    set(name, value) {
+      this.headers[name] = value;
+      return this;
+    },
     status(code) {
       this.statusCode = code;
       return this;
     },
-    type(value) {
-      this.contentType = value;
+    type() {
       return this;
     },
     json(payload) {
@@ -40,9 +37,40 @@ function mockRes() {
   };
 }
 
-describe("callerid controller", () => {
+const selectable = (value) => ({ select: () => value });
+const lean = (value) => selectable({ lean: async () => value });
+
+describe("callerid controller (spoken code + app entry)", () => {
   const phoneNumber = "+15551234567";
-  let User, twilioSignature, rewards, callerid;
+  const userId = "507f1f77bcf86cd799439011";
+  const owner = { _id: userId };
+  let User, rewards, callerid, twilioSignature;
+
+  // Starts a verification and returns the code Twilio was told to speak
+  // (parsed from the TwiML — the only place the code ever appears) along
+  // with the session fields the controller persisted.
+  async function startAndCaptureCode() {
+    User.findOneAndUpdate.mockResolvedValueOnce(null).mockResolvedValue({ _id: userId });
+    mockCallsCreate.mockResolvedValueOnce({ sid: "CA123" });
+    const res = mockRes();
+    await callerid.startVerification({ user: owner, body: { phoneNumber } }, res);
+    expect(res.statusCode).toBe(200);
+    const update = User.findOneAndUpdate.mock.calls[1][1].$set;
+    const twiml = mockCallsCreate.mock.calls[0][0].twiml;
+    const code = twiml.match(/code is ((?:\d, ){5}\d)\./)[1].replace(/, /g, "");
+    return { code, update, res };
+  }
+
+  function pendingUser(update, over = {}) {
+    return {
+      callerIdStatus: "pending",
+      callerIdVerificationNumber: update.callerIdVerificationNumber,
+      callerIdVerificationCodeHash: update.callerIdVerificationCodeHash,
+      callerIdVerificationSessionId: update.callerIdVerificationSessionId,
+      callerIdVerificationExpiresAt: update.callerIdVerificationExpiresAt,
+      ...over,
+    };
+  }
 
   beforeEach(() => {
     jest.resetModules();
@@ -50,341 +78,443 @@ describe("callerid controller", () => {
     process.env.TWILIO_ACCOUNT_SID = "AC_test";
     process.env.TWILIO_AUTH_TOKEN = "token_test";
     process.env.PUBLIC_BASE_URL = "https://api.9tel.app";
+    process.env.TWILIO_CALLER_ID = "+15550000000";
+    process.env.JWT_SECRET = "jwt_test_secret";
     delete process.env.CALLER_ID_DEV_TEST_MODE;
     delete process.env.CALLER_ID_DEV_TEST_NUMBERS;
     User = require("../../models/User");
     twilioSignature = require("../../utils/twilioSignature");
     rewards = require("../rewards");
-    User.findOne.mockReset().mockReturnValue({ select: () => ({ lean: async () => null }) });
+    User.findOne.mockReset().mockReturnValue(lean(null));
     User.findById.mockReset();
-    User.findOneAndUpdate.mockReset().mockResolvedValue({ _id: "u1" });
-    mockValidationRequestsCreate.mockReset().mockResolvedValue({});
-    mockOutgoingCallerIdsList.mockReset().mockResolvedValue([]);
+    User.findOneAndUpdate.mockReset();
+    mockCallsCreate.mockReset();
     twilioSignature.twilioRequestIsValid.mockReset().mockReturnValue(true);
     rewards.ensureWelcomeReward.mockReset();
+    jest.spyOn(console, "info").mockImplementation(() => {});
+    jest.spyOn(console, "warn").mockImplementation(() => {});
+    jest.spyOn(console, "error").mockImplementation(() => {});
     callerid = require("./index");
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   describe("startVerification", () => {
     it("requires an authenticated owner", async () => {
       const res = mockRes();
       await callerid.startVerification({ body: { phoneNumber } }, res);
       expect(res.statusCode).toBe(401);
-      expect(User.findOne).not.toHaveBeenCalled();
-      expect(mockValidationRequestsCreate).not.toHaveBeenCalled();
+      expect(mockCallsCreate).not.toHaveBeenCalled();
     });
 
-    it("starts an authoritative voice call and returns the provider code once for display", async () => {
-      mockValidationRequestsCreate.mockResolvedValue({ validationCode: "482913" });
+    it("rejects non-E.164 input before contacting the provider", async () => {
       const res = mockRes();
-      await callerid.startVerification({ user: { _id: "u1" }, body: { phoneNumber } }, res);
-
-      expect(res.statusCode).toBe(200);
-      expect(res.body).toMatchObject({ phoneNumber, callerIdStatus: "pending" });
-      expect(res.body.validationCode).toBe("482913");
-      expect(res.body.expiresAt).toEqual(expect.any(String));
-      const persisted = JSON.stringify(User.findOneAndUpdate.mock.calls);
-      expect(persisted).not.toContain("482913");
-      expect(mockValidationRequestsCreate).toHaveBeenCalledWith(expect.objectContaining({
-        phoneNumber,
-        statusCallback: expect.stringMatching(/\/callback\?token=[a-f0-9]{64}$/),
-      }));
-      expect(User.findOneAndUpdate).toHaveBeenCalledWith(
-        { _id: "u1", callerIdStatus: { $ne: "pending" } },
-        expect.objectContaining({
-          $set: expect.objectContaining({
-            callerIdStatus: "pending",
-            callerIdVerificationNumber: phoneNumber,
-            callerIdVerificationTokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-          }),
-          $unset: { verifiedCallerId: "" },
-        }),
-        { new: true }
-      );
+      await callerid.startVerification({ user: owner, body: { phoneNumber: "0801 234 5678" } }, res);
+      expect(res.statusCode).toBe(400);
+      expect(res.body.code).toBe("invalid_phone_number");
+      expect(mockCallsCreate).not.toHaveBeenCalled();
     });
 
     it("rejects a number already verified on another account", async () => {
-      User.findOne.mockReturnValue({ select: () => ({ lean: async () => ({ _id: "otherUser" }) }) });
+      User.findOne.mockReturnValue(lean({ _id: "other" }));
       const res = mockRes();
-      await callerid.startVerification({ user: { _id: "u1" }, body: { phoneNumber } }, res);
-
+      await callerid.startVerification({ user: owner, body: { phoneNumber } }, res);
       expect(res.statusCode).toBe(409);
-      expect(mockValidationRequestsCreate).not.toHaveBeenCalled();
-      expect(User.findOneAndUpdate).not.toHaveBeenCalled();
+      expect(res.body.code).toBe("caller_id_in_use");
+      expect(mockCallsCreate).not.toHaveBeenCalled();
     });
 
-    it("rejects non-E.164 input before contacting Twilio", async () => {
+    it("places a provider call that speaks the code, and never returns or stores the plaintext code", async () => {
+      User.findOneAndUpdate.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: userId });
+      // first call is expirePendingVerification, second is the pending session
+      mockCallsCreate.mockResolvedValue({ sid: "CA123" });
       const res = mockRes();
-      await callerid.startVerification({ user: { _id: "u1" }, body: { phoneNumber: "555-1234" } }, res);
+      await callerid.startVerification({ user: owner, body: { phoneNumber } }, res);
 
-      expect(res.statusCode).toBe(400);
-      expect(mockValidationRequestsCreate).not.toHaveBeenCalled();
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({ phoneNumber, callerIdStatus: "pending" });
+      expect(res.body.correlationId).toMatch(/^[a-f0-9]{24}$/);
+      expect(res.headers["Cache-Control"]).toBe("no-store");
+      expect(res.body).not.toHaveProperty("validationCode");
+      expect(res.body).not.toHaveProperty("code");
+
+      const callArgs = mockCallsCreate.mock.calls[0][0];
+      expect(callArgs).toMatchObject({ to: phoneNumber, from: "+15550000000" });
+      expect(callArgs.statusCallback).toContain("https://api.9tel.app/api/v1/callerid/call-status?session=");
+      expect(callArgs.twiml).toMatch(/Your 9tel verification code is (\d, ){5}\d\./);
+      expect((callArgs.twiml.match(/verification code is/g) || []).length).toBe(2);
+
+      const code = callArgs.twiml.match(/code is ((?:\d, ){5}\d)\./)[1].replace(/, /g, "");
+      const persisted = JSON.stringify(User.findOneAndUpdate.mock.calls);
+      expect(persisted).not.toContain(code);
+      expect(JSON.stringify(res.body)).not.toContain(code);
+      for (const spy of [console.info, console.warn, console.error]) {
+        expect(JSON.stringify(spy.mock.calls)).not.toContain(code);
+      }
     });
 
-    it("returns missing provider configuration without exposing secret values", async () => {
-      process.env.NODE_ENV = "production";
+    it("persists a pending, short-lived session with a hashed code", async () => {
+      User.findOneAndUpdate.mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: userId });
+      mockCallsCreate.mockResolvedValue({ sid: "CA123" });
+      const before = Date.now();
+      await callerid.startVerification({ user: owner, body: { phoneNumber } }, mockRes());
+      const update = User.findOneAndUpdate.mock.calls[1][1].$set;
+      expect(update).toMatchObject({ callerIdStatus: "pending", callerIdVerificationNumber: phoneNumber, callerIdVerificationAttempts: 0 });
+      expect(update.callerIdVerificationCodeHash).toMatch(/^[a-f0-9]{64}$/);
+      const ttl = update.callerIdVerificationExpiresAt.getTime() - before;
+      expect(ttl).toBeGreaterThan(0);
+      expect(ttl).toBeLessThanOrEqual(callerid._private.VERIFICATION_TTL_MS + 1000);
+    });
+
+    it("enforces the resend cooldown server-side", async () => {
+      User.findOneAndUpdate.mockResolvedValue(null);
+      User.findById.mockReturnValue(lean({ callerIdStatus: "failed", callerIdLastRequestedAt: new Date() }));
+      const res = mockRes();
+      await callerid.startVerification({ user: owner, body: { phoneNumber } }, res);
+      expect(res.statusCode).toBe(429);
+      expect(res.body.code).toBe("resend_cooldown");
+      expect(mockCallsCreate).not.toHaveBeenCalled();
+    });
+
+    it("refuses to start while another attempt is still pending", async () => {
+      User.findOneAndUpdate.mockResolvedValue(null);
+      User.findById.mockReturnValue(lean({ callerIdStatus: "pending" }));
+      const res = mockRes();
+      await callerid.startVerification({ user: owner, body: { phoneNumber } }, res);
+      expect(res.statusCode).toBe(409);
+      expect(res.body.code).toBe("verification_pending");
+    });
+
+    it("reports missing provider configuration without exposing secret values", async () => {
       process.env.TWILIO_AUTH_TOKEN = "";
+      delete process.env.TWILIO_CALLER_ID;
       const res = mockRes();
-      await callerid.startVerification({ user: { _id: "u1" }, body: { phoneNumber } }, res);
-
+      await callerid.startVerification({ user: owner, body: { phoneNumber } }, res);
       expect(res.statusCode).toBe(503);
-      expect(res.body).toMatchObject({
-        code: "caller_id_configuration_error",
-        missing: ["TWILIO_AUTH_TOKEN"],
-      });
+      expect(res.body).toMatchObject({ code: "caller_id_configuration_error", missing: ["TWILIO_AUTH_TOKEN", "TWILIO_CALLER_ID"] });
       expect(JSON.stringify(res.body)).not.toContain("token_test");
-      expect(User.findOneAndUpdate).not.toHaveBeenCalled();
-      expect(mockValidationRequestsCreate).not.toHaveBeenCalled();
+      expect(mockCallsCreate).not.toHaveBeenCalled();
+    });
+
+    it("persists failure and returns a safe error when the provider cannot place the call", async () => {
+      User.findOneAndUpdate.mockResolvedValue({ _id: userId });
+      mockCallsCreate.mockRejectedValue(Object.assign(new Error("Twilio says secret-detail"), { code: 21211, status: 400 }));
+      const res = mockRes();
+      await callerid.startVerification({ user: owner, body: { phoneNumber } }, res);
+      expect(res.statusCode).toBe(400);
+      expect(res.body.code).toBe("invalid_phone_number");
+      expect(JSON.stringify(res.body)).not.toContain("secret-detail");
+      const failure = User.findOneAndUpdate.mock.calls.at(-1);
+      expect(failure[0]).toMatchObject({ callerIdStatus: "pending" });
+      expect(failure[1]).toMatchObject({ callerIdStatus: "failed", callerIdVerificationCodeHash: null });
+    });
+
+    it("maps an unknown provider outage to provider_unavailable (never a fabricated success)", async () => {
+      User.findOneAndUpdate.mockResolvedValue({ _id: userId });
+      mockCallsCreate.mockRejectedValue(new Error("boom"));
+      const res = mockRes();
+      await callerid.startVerification({ user: owner, body: { phoneNumber } }, res);
+      expect(res.statusCode).toBe(503);
+      expect(res.body.code).toBe("provider_unavailable");
+      expect(res.body.callerIdStatus).toBeUndefined();
     });
 
     it("uses only the configured allowlist for explicit non-production developer tests", async () => {
       process.env.CALLER_ID_DEV_TEST_MODE = "true";
       process.env.CALLER_ID_DEV_TEST_NUMBERS = phoneNumber;
       process.env.TWILIO_ACCOUNT_SID = "";
+      User.findOneAndUpdate.mockResolvedValue({ _id: userId });
       const res = mockRes();
-      await callerid.startVerification({ user: { _id: "u1" }, body: { phoneNumber } }, res);
-
-      expect(res.statusCode).toBe(200);
+      await callerid.startVerification({ user: owner, body: { phoneNumber } }, res);
       expect(res.body).toMatchObject({ callerIdStatus: "verified", method: "developer_test" });
-      expect(mockValidationRequestsCreate).not.toHaveBeenCalled();
-      expect(User.findOneAndUpdate).toHaveBeenCalledWith(
-        { _id: "u1", callerIdStatus: { $ne: "pending" } },
-        expect.objectContaining({
-          $set: expect.objectContaining({
-            callerIdStatus: "verified",
-            callerIdVerificationMethod: "developer_test",
-            callerIdLastAttemptedNumber: phoneNumber,
-          }),
-          $unset: { verifiedCallerId: "" },
-        }),
-        { new: true }
-      );
+      expect(mockCallsCreate).not.toHaveBeenCalled();
     });
 
     it("never enables the developer bypass in production", async () => {
       process.env.NODE_ENV = "production";
       process.env.CALLER_ID_DEV_TEST_MODE = "true";
       process.env.CALLER_ID_DEV_TEST_NUMBERS = phoneNumber;
+      process.env.TWILIO_ACCOUNT_SID = "";
       const res = mockRes();
-      await callerid.startVerification({ user: { _id: "u1" }, body: { phoneNumber } }, res);
-
-      expect(res.body.callerIdStatus).toBe("pending");
-      expect(res.body.method).toBeUndefined();
-      expect(mockValidationRequestsCreate).toHaveBeenCalled();
-    });
-
-    it("requires exact developer allowlisting before using the local shortcut", async () => {
-      process.env.CALLER_ID_DEV_TEST_MODE = "true";
-      process.env.CALLER_ID_DEV_TEST_NUMBERS = "+15550000000";
-      process.env.TWILIO_AUTH_TOKEN = "";
-      const res = mockRes();
-      await callerid.startVerification({ user: { _id: "u1" }, body: { phoneNumber } }, res);
-
+      await callerid.startVerification({ user: owner, body: { phoneNumber } }, res);
       expect(res.statusCode).toBe(503);
       expect(res.body.code).toBe("caller_id_configuration_error");
-      expect(User.findOneAndUpdate).not.toHaveBeenCalled();
-      expect(mockValidationRequestsCreate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("submitVerificationCode", () => {
+    it("requires an authenticated owner", async () => {
+      const res = mockRes();
+      await callerid.submitVerificationCode({ body: { code: "123456" } }, res);
+      expect(res.statusCode).toBe(401);
+      expect(User.findById).not.toHaveBeenCalled();
     });
 
-    it("returns a safe provider-specific error and persists failure", async () => {
-      const providerFailure = new Error("provider internal details");
-      providerFailure.code = "21408";
-      mockValidationRequestsCreate.mockRejectedValue(providerFailure);
+    it("rejects malformed codes without consuming an attempt", async () => {
+      for (const code of ["", "12345", "1234567", "abcdef", undefined]) {
+        const res = mockRes();
+        await callerid.submitVerificationCode({ user: owner, body: { code } }, res);
+        expect(res.statusCode).toBe(400);
+        expect(res.body.code).toBe("invalid_code_format");
+      }
+      expect(User.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it("marks the caller ID verified exactly once with the correct spoken code", async () => {
+      const { code, update } = await startAndCaptureCode();
+      User.findOneAndUpdate.mockReset();
+      User.findById.mockReturnValue(lean(pendingUser(update)));
+      User.findOneAndUpdate
+        .mockResolvedValueOnce({ callerIdVerificationAttempts: 1 })
+        .mockResolvedValueOnce({ _id: userId, verifiedCallerId: phoneNumber });
+
       const res = mockRes();
-      await callerid.startVerification({ user: { _id: "u1" }, body: { phoneNumber } }, res);
+      await callerid.submitVerificationCode({ user: owner, body: { code } }, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toMatchObject({ callerIdStatus: "verified", verifiedCallerId: phoneNumber, method: "spoken_code" });
+      const [filter, change] = User.findOneAndUpdate.mock.calls[1];
+      expect(filter).toMatchObject({
+        _id: userId,
+        callerIdStatus: "pending",
+        callerIdVerificationSessionId: update.callerIdVerificationSessionId,
+        callerIdVerificationNumber: phoneNumber,
+      });
+      expect(filter.callerIdVerificationExpiresAt.$gt).toBeInstanceOf(Date);
+      expect(change).toMatchObject({ callerIdStatus: "verified", callerIdVerificationMethod: "spoken_code", callerIdVerificationCodeHash: null });
+      expect(rewards.ensureWelcomeReward).toHaveBeenCalledTimes(1);
+    });
+
+    it("rejects a wrong code, counts the attempt and reports attempts remaining", async () => {
+      const { code, update } = await startAndCaptureCode();
+      const wrong = code === "000000" ? "000001" : "000000";
+      User.findOneAndUpdate.mockReset().mockResolvedValueOnce({ callerIdVerificationAttempts: 1 });
+      User.findById.mockReturnValue(lean(pendingUser(update)));
+
+      const res = mockRes();
+      await callerid.submitVerificationCode({ user: owner, body: { code: wrong } }, res);
 
       expect(res.statusCode).toBe(400);
-      expect(res.body).toEqual({
-        code: "country_not_enabled",
-        message: "Calling this country is not enabled for verification. Contact support.",
+      expect(res.body).toMatchObject({ code: "incorrect_code", attemptsRemaining: callerid._private.MAX_ATTEMPTS - 1 });
+      expect(User.findOneAndUpdate).toHaveBeenCalledTimes(1);
+      expect(User.findOneAndUpdate.mock.calls[0][1]).toEqual({ $inc: { callerIdVerificationAttempts: 1 } });
+      expect(rewards.ensureWelcomeReward).not.toHaveBeenCalled();
+      expect(JSON.stringify(console.info.mock.calls)).not.toContain(wrong);
+    });
+
+    it("fails the session once the final allowed attempt is wrong", async () => {
+      const { code, update } = await startAndCaptureCode();
+      const wrong = code === "000000" ? "000001" : "000000";
+      User.findOneAndUpdate.mockReset()
+        .mockResolvedValueOnce({ callerIdVerificationAttempts: callerid._private.MAX_ATTEMPTS })
+        .mockResolvedValueOnce({ _id: userId });
+      User.findById.mockReturnValue(lean(pendingUser(update)));
+      const res = mockRes();
+      await callerid.submitVerificationCode({ user: owner, body: { code: wrong } }, res);
+      expect(res.statusCode).toBe(429);
+      expect(res.body).toMatchObject({ code: "too_many_attempts", callerIdStatus: "failed" });
+      expect(User.findOneAndUpdate.mock.calls[1][1]).toMatchObject({ callerIdStatus: "failed", callerIdVerificationCodeHash: null });
+    });
+
+    it("refuses further guesses after the attempt limit even for the right code", async () => {
+      const { code, update } = await startAndCaptureCode();
+      User.findOneAndUpdate.mockReset().mockResolvedValueOnce(null).mockResolvedValueOnce({ _id: userId });
+      User.findById.mockReturnValue(lean(pendingUser(update, { callerIdVerificationAttempts: 5 })));
+      const res = mockRes();
+      await callerid.submitVerificationCode({ user: owner, body: { code } }, res);
+      expect(res.statusCode).toBe(429);
+      expect(res.body.code).toBe("too_many_attempts");
+      expect(rewards.ensureWelcomeReward).not.toHaveBeenCalled();
+    });
+
+    it("reports no active verification when the session is consumed between the check and the count", async () => {
+      const { code, update } = await startAndCaptureCode();
+      User.findOneAndUpdate.mockReset().mockResolvedValueOnce(null);
+      User.findById
+        .mockReturnValueOnce(lean(pendingUser(update)))
+        .mockReturnValueOnce(lean({ callerIdStatus: "verified", callerIdVerificationSessionId: null }));
+      const res = mockRes();
+      await callerid.submitVerificationCode({ user: owner, body: { code } }, res);
+      expect(res.statusCode).toBe(409);
+      expect(res.body.code).toBe("no_active_verification");
+      expect(User.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it("reports expiry when the session expires between the check and the count", async () => {
+      const { code, update } = await startAndCaptureCode();
+      User.findOneAndUpdate.mockReset().mockResolvedValue({ _id: userId });
+      User.findOneAndUpdate.mockResolvedValueOnce(null);
+      User.findById
+        .mockReturnValueOnce(lean(pendingUser(update)))
+        .mockReturnValueOnce(lean(pendingUser(update, { callerIdVerificationExpiresAt: new Date(Date.now() - 1) })));
+      const res = mockRes();
+      await callerid.submitVerificationCode({ user: owner, body: { code } }, res);
+      expect(res.statusCode).toBe(410);
+      expect(res.body.callerIdStatus).toBe("expired");
+    });
+
+    it("rejects an expired session and persists the expiry", async () => {
+      const { code, update } = await startAndCaptureCode();
+      User.findOneAndUpdate.mockReset().mockResolvedValue({ _id: userId });
+      User.findById.mockReturnValue(lean(pendingUser(update, { callerIdVerificationExpiresAt: new Date(Date.now() - 1000) })));
+      const res = mockRes();
+      await callerid.submitVerificationCode({ user: owner, body: { code } }, res);
+      expect(res.statusCode).toBe(410);
+      expect(res.body).toMatchObject({ code: "verification_expired", callerIdStatus: "expired" });
+      expect(User.findOneAndUpdate.mock.calls[0][1]).toMatchObject({ callerIdStatus: "expired" });
+      expect(rewards.ensureWelcomeReward).not.toHaveBeenCalled();
+    });
+
+    it("rejects a reused code after the session was consumed", async () => {
+      User.findById.mockReturnValue(lean({ callerIdStatus: "verified", callerIdVerificationSessionId: null }));
+      const res = mockRes();
+      await callerid.submitVerificationCode({ user: owner, body: { code: "123456" } }, res);
+      expect(res.statusCode).toBe(409);
+      expect(res.body.code).toBe("no_active_verification");
+      expect(User.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it("lets only one of two simultaneous correct submissions verify", async () => {
+      const { code, update } = await startAndCaptureCode();
+      User.findOneAndUpdate.mockReset();
+      User.findById.mockReturnValue(lean(pendingUser(update)));
+      let consumed = false;
+      User.findOneAndUpdate.mockImplementation(async (filter, change) => {
+        if (change.$inc) return { callerIdVerificationAttempts: 1 };
+        if (consumed) return null; // compare-and-set on status/session fails for the loser
+        consumed = true;
+        return { _id: userId, verifiedCallerId: phoneNumber };
       });
-      expect(JSON.stringify(res.body)).not.toContain("provider internal details");
-      expect(User.findOneAndUpdate).toHaveBeenCalledWith(
-        { _id: "u1", callerIdStatus: "pending", callerIdVerificationTokenHash: expect.any(String) },
-        expect.objectContaining({ callerIdStatus: "failed" })
-      );
+      const [a, b] = [mockRes(), mockRes()];
+      await Promise.all([
+        callerid.submitVerificationCode({ user: owner, body: { code } }, a),
+        callerid.submitVerificationCode({ user: owner, body: { code } }, b),
+      ]);
+      expect([a.statusCode, b.statusCode].sort()).toEqual([200, 409]);
+      expect(rewards.ensureWelcomeReward).toHaveBeenCalledTimes(1);
+    });
+
+    it("never lets one account's session be completed by another's code hash", async () => {
+      const { code, update } = await startAndCaptureCode();
+      const otherHash = callerid._private.hashCode("someone-else", update.callerIdVerificationSessionId, phoneNumber, code);
+      expect(otherHash).not.toBe(update.callerIdVerificationCodeHash);
+    });
+
+    it("reports an in-use number if another account verified it meanwhile", async () => {
+      const { code, update } = await startAndCaptureCode();
+      User.findOneAndUpdate.mockReset();
+      User.findById.mockReturnValue(lean(pendingUser(update)));
+      User.findOneAndUpdate
+        .mockResolvedValueOnce({ callerIdVerificationAttempts: 1 })
+        .mockRejectedValueOnce(Object.assign(new Error("dup"), { code: 11000 }))
+        .mockResolvedValueOnce({ _id: userId });
+      const res = mockRes();
+      await callerid.submitVerificationCode({ user: owner, body: { code } }, res);
+      expect(res.statusCode).toBe(409);
+      expect(res.body.code).toBe("caller_id_in_use");
     });
   });
 
   describe("getVerificationStatus", () => {
-    it("returns only the owner's persisted status and hides a pending code", async () => {
-      User.findById.mockReturnValue({
-        select: () => Promise.resolve({
-          verifiedCallerId: null,
-          callerIdStatus: "pending",
-          callerIdVerificationNumber: phoneNumber,
-          callerIdLastAttemptedNumber: phoneNumber,
-          callerIdVerificationExpiresAt: new Date(Date.now() + 60_000),
-        }),
-      });
-      const res = mockRes();
-      await callerid.getVerificationStatus({ user: { _id: "u1" } }, res);
+    const statusUser = (over) => ({ callerIdStatus: "unverified", ...over });
 
-      expect(res.body).toEqual({ verifiedCallerId: null, callerIdStatus: "pending", phoneNumber });
+    it("returns the owner's pending session without any code material", async () => {
+      const expiresAt = new Date(Date.now() + 60_000);
+      User.findById.mockReturnValue(selectable(statusUser({
+        callerIdStatus: "pending",
+        callerIdVerificationNumber: phoneNumber,
+        callerIdVerificationSessionId: "a".repeat(24),
+        callerIdVerificationAttempts: 2,
+        callerIdVerificationExpiresAt: expiresAt,
+        callerIdVerificationCodeHash: "hash",
+      })));
+      const res = mockRes();
+      await callerid.getVerificationStatus({ user: owner }, res);
+      expect(res.body).toMatchObject({ callerIdStatus: "pending", phoneNumber, attemptsRemaining: 3, correlationId: "a".repeat(24) });
+      expect(JSON.stringify(res.body)).not.toContain("hash");
     });
 
     it("expires a timed-out pending attempt on the server", async () => {
-      User.findById.mockReturnValue({
-        select: () => Promise.resolve({
-          verifiedCallerId: null,
-          callerIdStatus: "pending",
-          callerIdVerificationExpiresAt: new Date(Date.now() - 1),
-        }),
-      });
-      User.findOneAndUpdate.mockResolvedValueOnce({ callerIdLastAttemptedNumber: phoneNumber });
+      User.findById.mockReturnValue(selectable(statusUser({ callerIdStatus: "pending", callerIdVerificationExpiresAt: new Date(Date.now() - 1) })));
+      User.findOneAndUpdate.mockResolvedValue({ callerIdLastAttemptedNumber: phoneNumber });
       const res = mockRes();
-      await callerid.getVerificationStatus({ user: { _id: "u1" } }, res);
-      expect(res.body).toEqual({ verifiedCallerId: null, callerIdStatus: "expired", phoneNumber });
-      expect(User.findOneAndUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ _id: "u1", callerIdStatus: "pending" }),
-        expect.objectContaining({ callerIdStatus: "expired" }),
-        { new: true }
-      );
+      await callerid.getVerificationStatus({ user: owner }, res);
+      expect(res.body).toMatchObject({ callerIdStatus: "expired", verifiedCallerId: null, phoneNumber });
+    });
+
+    it("reflects verified state so the app can refresh", async () => {
+      User.findById.mockReturnValue(selectable(statusUser({ callerIdStatus: "verified", verifiedCallerId: phoneNumber, callerIdVerificationMethod: "spoken_code" })));
+      const res = mockRes();
+      await callerid.getVerificationStatus({ user: owner }, res);
+      expect(res.body).toMatchObject({ callerIdStatus: "verified", verifiedCallerId: phoneNumber, method: "spoken_code" });
     });
 
     it("rejects status checks without an authenticated owner", async () => {
       const res = mockRes();
       await callerid.getVerificationStatus({}, res);
       expect(res.statusCode).toBe(401);
-      expect(User.findById).not.toHaveBeenCalled();
     });
 
     it("does not recognize synthetic developer verification in production", async () => {
       process.env.NODE_ENV = "production";
-      User.findById.mockReturnValue({
-        select: () => Promise.resolve({
-          verifiedCallerId: null,
-          callerIdStatus: "verified",
-          callerIdVerificationMethod: "developer_test",
-          callerIdLastAttemptedNumber: phoneNumber,
-        }),
-      });
+      User.findById.mockReturnValue(selectable(statusUser({ callerIdStatus: "verified", verifiedCallerId: phoneNumber, callerIdVerificationMethod: "developer_test" })));
       const res = mockRes();
-      await callerid.getVerificationStatus({ user: { _id: "u1" } }, res);
-      expect(res.body).toEqual({ verifiedCallerId: null, callerIdStatus: "unverified" });
+      await callerid.getVerificationStatus({ user: owner }, res);
+      expect(res.body).toMatchObject({ callerIdStatus: "unverified", verifiedCallerId: null });
     });
   });
 
   describe("cancelVerification", () => {
     it("invalidates only the authenticated owner's pending attempt", async () => {
+      User.findOneAndUpdate.mockResolvedValue({ _id: userId });
       const res = mockRes();
-      await callerid.cancelVerification({ user: { _id: "u1" } }, res);
+      await callerid.cancelVerification({ user: owner }, res);
       expect(res.body).toEqual({ callerIdStatus: "unverified" });
-      expect(User.findOneAndUpdate).toHaveBeenCalledWith(
-        { _id: "u1", callerIdStatus: "pending" },
-        expect.objectContaining({ callerIdStatus: "unverified", callerIdVerificationTokenHash: null }),
-        { new: true }
-      );
+      expect(User.findOneAndUpdate.mock.calls[0][0]).toEqual({ _id: userId, callerIdStatus: "pending" });
+      expect(User.findOneAndUpdate.mock.calls[0][1]).toMatchObject({ callerIdVerificationCodeHash: null, callerIdVerificationSessionId: null });
+    });
+
+    it("requires authentication", async () => {
+      const res = mockRes();
+      await callerid.cancelVerification({}, res);
+      expect(res.statusCode).toBe(401);
     });
   });
 
-  describe("verificationCallback", () => {
+  describe("callStatusCallback", () => {
+    const session = "b".repeat(24);
+
     it("rejects a request whose Twilio signature does not validate", async () => {
       twilioSignature.twilioRequestIsValid.mockReturnValue(false);
       const res = mockRes();
-      await callerid.verificationCallback({ query: { token: "a".repeat(64) }, body: {} }, res);
+      await callerid.callStatusCallback({ query: { session }, body: { CallStatus: "failed" } }, res);
       expect(res.statusCode).toBe(403);
       expect(User.findOneAndUpdate).not.toHaveBeenCalled();
     });
 
-    it("marks only the matching unexpired attempt verified on Twilio success", async () => {
-      const token = "a".repeat(64);
-      const res = mockRes();
-      await callerid.verificationCallback(
-        { query: { token }, body: { PhoneNumber: phoneNumber, VerificationStatus: "success" } },
-        res
-      );
+    it("fails only the matching pending session when the call did not connect", async () => {
+      User.findOneAndUpdate.mockResolvedValue({ _id: userId });
+      for (const CallStatus of ["failed", "busy", "no-answer", "canceled"]) {
+        User.findOneAndUpdate.mockClear();
+        const res = mockRes();
+        await callerid.callStatusCallback({ query: { session }, body: { CallStatus } }, res);
+        expect(res.statusCode).toBe(200);
+        expect(User.findOneAndUpdate.mock.calls[0][0]).toEqual({ callerIdStatus: "pending", callerIdVerificationSessionId: session });
+        expect(User.findOneAndUpdate.mock.calls[0][1]).toMatchObject({ callerIdStatus: "failed" });
+      }
+    });
 
-      expect(User.findOneAndUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({
-          callerIdStatus: "pending",
-          callerIdVerificationTokenHash: crypto.createHash("sha256").update(token).digest("hex"),
-          callerIdVerificationNumber: phoneNumber,
-          callerIdVerificationExpiresAt: { $gt: expect.any(Date) },
-        }),
-        expect.objectContaining({
-          verifiedCallerId: phoneNumber,
-          callerIdStatus: "verified",
-          callerIdVerificationMethod: "twilio",
-        }),
-        { new: true }
-      );
-      expect(rewards.ensureWelcomeReward).toHaveBeenCalledWith("u1");
+    it("never verifies anything and ignores a completed call", async () => {
+      const res = mockRes();
+      await callerid.callStatusCallback({ query: { session }, body: { CallStatus: "completed" } }, res);
       expect(res.statusCode).toBe(200);
-    });
-
-    it("persists failed provider outcomes and prevents callback replay", async () => {
-      const token = "b".repeat(64);
-      const res = mockRes();
-      await callerid.verificationCallback(
-        { query: { token }, body: { PhoneNumber: phoneNumber, VerificationStatus: "failed" } },
-        res
-      );
-
-      expect(User.findOneAndUpdate).toHaveBeenCalledWith(
-        { callerIdStatus: "pending", callerIdVerificationTokenHash: crypto.createHash("sha256").update(token).digest("hex") },
-        expect.objectContaining({ callerIdStatus: "failed", callerIdVerificationTokenHash: null })
-      );
-      expect(res.statusCode).toBe(200);
-    });
-
-    it("does not advance state or repeat side effects when a success callback is replayed", async () => {
-      const token = "c".repeat(64);
-      User.findOneAndUpdate.mockResolvedValueOnce({ _id: "u1" }).mockResolvedValueOnce(null);
-      const request = { query: { token }, body: { PhoneNumber: phoneNumber, VerificationStatus: "success" } };
-      await callerid.verificationCallback(request, mockRes());
-      const replay = mockRes();
-      await callerid.verificationCallback(request, replay);
-
-      expect(User.findOneAndUpdate).toHaveBeenCalledTimes(2);
-      expect(rewards.ensureWelcomeReward).toHaveBeenCalledTimes(1);
-      expect(replay.statusCode).toBe(200);
-    });
-  });
-
-  describe("status reconciliation with Twilio", () => {
-    const tokenHash = "d".repeat(64);
-    const pendingUser = (expiresAt) => ({
-      _id: "u1",
-      callerIdStatus: "pending",
-      callerIdVerificationNumber: phoneNumber,
-      callerIdVerificationTokenHash: tokenHash,
-      callerIdVerificationExpiresAt: expiresAt,
-    });
-    const run = async (user) => {
-      User.findById.mockReturnValue({ select: async () => user });
-      const res = mockRes();
-      await callerid.getVerificationStatus({ user: { _id: "u1" } }, res);
-      return res;
-    };
-
-    it("completes a pending attempt Twilio confirms even when the callback was lost", async () => {
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-      mockOutgoingCallerIdsList.mockResolvedValue([{ phoneNumber, dateCreated: new Date() }]);
-      User.findOneAndUpdate.mockResolvedValue({ _id: "u1", verifiedCallerId: phoneNumber });
-      const res = await run(pendingUser(expiresAt));
-      expect(res.body).toEqual({ verifiedCallerId: phoneNumber, callerIdStatus: "verified", method: "twilio" });
-      expect(User.findOneAndUpdate).toHaveBeenCalledWith(
-        expect.objectContaining({ callerIdStatus: "pending", callerIdVerificationTokenHash: tokenHash }),
-        expect.objectContaining({ callerIdStatus: "verified" }),
-        { new: true }
-      );
-      expect(rewards.ensureWelcomeReward).toHaveBeenCalledTimes(1);
-    });
-
-    it("does not trust a caller ID that Twilio already listed before this attempt", async () => {
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-      mockOutgoingCallerIdsList.mockResolvedValue([{ phoneNumber, dateCreated: new Date(Date.now() - 86400000) }]);
-      const res = await run(pendingUser(expiresAt));
-      expect(res.body.callerIdStatus).toBe("pending");
       expect(User.findOneAndUpdate).not.toHaveBeenCalled();
     });
 
-    it("stays pending when Twilio has no record or errors", async () => {
-      const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
-      expect((await run(pendingUser(expiresAt))).body.callerIdStatus).toBe("pending");
-      mockOutgoingCallerIdsList.mockRejectedValue(Object.assign(new Error("x"), { code: 20003 }));
-      expect((await run(pendingUser(expiresAt))).body.callerIdStatus).toBe("pending");
+    it("ignores malformed session ids", async () => {
+      const res = mockRes();
+      await callerid.callStatusCallback({ query: { session: "nope" }, body: { CallStatus: "failed" } }, res);
+      expect(User.findOneAndUpdate).not.toHaveBeenCalled();
     });
   });
 });

@@ -73,8 +73,14 @@ exports.outgoingCallTwiML = async (req, res) => {
   let caller = null;
   if (callerMatch) {
     const User = require("../../models/User");
-    caller = await User.findById(callerMatch[1]).select("verifiedCallerId phoneNumber isGuest").lean();
-    if (caller?.verifiedCallerId) callerId = caller.verifiedCallerId;
+    caller = await User.findById(callerMatch[1])
+      .select("verifiedCallerId callerIdStatus callerIdVerificationMethod phoneNumber isGuest")
+      .lean();
+    const verifiedCallerIdIsAuthoritative =
+      caller?.verifiedCallerId &&
+      (caller.callerIdStatus === "verified" || !caller.callerIdStatus) &&
+      caller.callerIdVerificationMethod !== "developer_test";
+    if (verifiedCallerIdIsAuthoritative) callerId = caller.verifiedCallerId;
   }
   if (!callerId || !E164.test(callerId)) return res.status(503).type("text/plain").send("Voice caller ID is not configured");
   const baseUrl = `${process.env.PUBLIC_BASE_URL?.replace(/\/$/, "") || ""}/api/v1/voice/outgoing/status`;

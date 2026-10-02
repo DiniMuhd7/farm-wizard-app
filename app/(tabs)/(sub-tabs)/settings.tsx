@@ -5,7 +5,7 @@ import { CheckCircle2, ChevronLeft, ChevronRight, CreditCard, Globe2, Landmark, 
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { getMyNumber } from "@/services/numbers";
-import { getVerifiedCallerId } from "@/services/callerid";
+import { getCallerIdVerificationStatus, type CallerIdStatus } from "@/services/callerid";
 import { checkNumberAvailability, createFlutterwaveCheckout, createStripeCheckout, getAvailableNumberCountries, getOrderStatus, toPaymentInitError } from "@/services/payments";
 import { useLoginContext } from "@/context/LoginProvider";
 import { useCountryData } from "@/hooks/useCountryData";
@@ -21,6 +21,7 @@ export default function Settings() {
   const [loadingNumber, setLoadingNumber] = useState(true);
 
   const [callerId, setCallerId] = useState<string | null>(null);
+  const [callerIdStatus, setCallerIdStatus] = useState<CallerIdStatus>("unverified");
   const [loadingCallerId, setLoadingCallerId] = useState(true);
 
   const { countries } = useCountryData();
@@ -50,9 +51,15 @@ export default function Settings() {
       .then(setMyNumber)
       .catch(() => setMyNumber(null))
       .finally(() => setLoadingNumber(false));
-    getVerifiedCallerId()
-      .then(setCallerId)
-      .catch(() => setCallerId(null))
+    getCallerIdVerificationStatus()
+      .then((status) => {
+        setCallerId(status.verifiedCallerId);
+        setCallerIdStatus(status.callerIdStatus);
+      })
+      .catch(() => {
+        setCallerId(null);
+        setCallerIdStatus("unverified");
+      })
       .finally(() => setLoadingCallerId(false));
 
     // Best-effort: pre-select the country 9tel already detects for the
@@ -306,6 +313,16 @@ export default function Settings() {
                   <Text style={s.rowLabel}>{callerId}</Text>
                   <Text style={s.rowDetail}>Shown to people you call, instead of the shared number</Text>
                 </>
+              ) : callerIdStatus === "pending" ? (
+                <>
+                  <Text style={s.rowLabel}>Verification in progress</Text>
+                  <Text style={s.rowDetail}>Answer the automated call and follow its keypad instructions</Text>
+                </>
+              ) : callerIdStatus === "failed" || callerIdStatus === "expired" ? (
+                <>
+                  <Text style={s.rowLabel}>Verification {callerIdStatus}</Text>
+                  <Text style={s.rowDetail}>Your number is not used for calls until verification succeeds</Text>
+                </>
               ) : (
                 <>
                   <Text style={s.rowLabel}>Not verified</Text>
@@ -315,7 +332,7 @@ export default function Settings() {
             </View>
             {!loadingCallerId && !callerId && (
               <Pressable style={s.getNumberBtn} onPress={() => router.push("/verify-phone")}>
-                <Text style={s.getNumberText}>Verify</Text>
+                <Text style={s.getNumberText}>{callerIdStatus === "pending" ? "View" : "Verify"}</Text>
               </Pressable>
             )}
           </View>

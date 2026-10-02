@@ -1,13 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Check, ChevronLeft, Clock3, Gift, Globe2, PhoneCall, ShieldCheck, Sparkles, UserRoundCheck, Users } from "lucide-react-native";
+import { Check, ChevronLeft, Clock3, Gift, Globe2, PhoneCall, ShieldCheck, Sparkles, UserRoundCheck } from "lucide-react-native";
 import { router } from "expo-router";
 import { useLoginContext } from "@/context/LoginProvider";
-import CallingPlanTiers from "@/components/CallingPlanTiers";
-import NineTelPlanCards from "@/components/NineTelPlanCards";
-import PayAsYouGoCard from "@/components/PayAsYouGoCard";
-import { getCallingPlansForCountry } from "@/constants/callingPlans";
+import AirbundleCards from "@/components/AirbundleCards";
+import PrepaidCard from "@/components/PrepaidCard";
 import { getWelcomeReward, type WelcomeRewardStatus } from "@/services/rewards";
 
 const benefits = [
@@ -18,28 +16,17 @@ const benefits = [
 ];
 
 const tabs = [
-  { id: "free", label: "Free" },
-  { id: "premium", label: "Premium" },
-  { id: "payg", label: "Pay As You Go" },
+  { id: "airbundle", label: "Airbundle" },
+  { id: "prepaid", label: "Prepaid" },
 ] as const;
 
 type PlanTab = typeof tabs[number]["id"];
 
 export default function CallingPlan() {
   const { user, setUser } = useLoginContext();
-  const regionalPlans = useMemo(() => getCallingPlansForCountry(user?.country), [user?.country]);
   const [welcome, setWelcome] = useState<WelcomeRewardStatus | null>(null);
   const [welcomeLoading, setWelcomeLoading] = useState(true);
-  const [selectedTab, setSelectedTab] = useState<PlanTab>(user?.isPremium ? "premium" : "free");
-  const [selectedTierId, setSelectedTierId] = useState<string | null>(
-    () => regionalPlans?.tiers.find((tier) => tier.popular)?.id ?? regionalPlans?.tiers[0]?.id ?? null,
-  );
-
-  useEffect(() => {
-    setSelectedTierId(
-      regionalPlans?.tiers.find((tier) => tier.popular)?.id ?? regionalPlans?.tiers[0]?.id ?? null,
-    );
-  }, [regionalPlans]);
+  const [selectedTab, setSelectedTab] = useState<PlanTab>("airbundle");
 
   useEffect(() => {
     let cancelled = false;
@@ -70,7 +57,7 @@ export default function CallingPlan() {
         <View style={s.heroCard} accessible accessibilityRole="summary">
           <View style={s.badge}><Sparkles size={17} color="#DCD8FF" /><Text style={s.badgeText}>9TEL CALLING</Text></View>
           <Text style={s.plan}>Choose by destination, not guesswork</Text>
-          <Text style={s.copy}>Free and Premium are for 9tel-to-9tel calls. Pay As You Go is only for local-carrier calls, and balances or upgrades never show as confirmed until the server says they are.</Text>
+          <Text style={s.copy}>Airbundle is for 9tel-to-9tel calls. Prepaid is only for local-carrier calls. Balances and bundles never show as confirmed until the server says they are.</Text>
         </View>
 
         <View style={s.segmentedWrap} accessibilityRole="tablist">
@@ -91,73 +78,32 @@ export default function CallingPlan() {
           })}
         </View>
 
-        {selectedTab === "free" && (
-          <>
-            <View style={s.summaryCard}>
-              <View style={s.summaryIcon}><Users size={18} color="#5147AF" /></View>
-              <View style={s.summaryCopy}>
-                <Text style={s.summaryTitle}>Free plan eligibility</Text>
-                <Text style={s.summaryText}>Applies only when both sides of the call are 9tel users. Rewarded ads play before and after each eligible call unless your account already has Premium.</Text>
-              </View>
-            </View>
-            <NineTelPlanCards
-              plan="free"
-              isPremium={user?.isPremium === true}
-              onUpgraded={() => setUser((current: any) => (current ? { ...current, isPremium: true } : current))}
-            />
-          </>
-        )}
-
-        {selectedTab === "premium" && (
+        {selectedTab === "airbundle" && (
           <>
             <View style={s.summaryCard}>
               <View style={s.summaryIcon}><ShieldCheck size={18} color="#5147AF" /></View>
               <View style={s.summaryCopy}>
-                <Text style={s.summaryTitle}>Premium eligibility</Text>
-                <Text style={s.summaryText}>Premium only affects 9tel-to-9tel calls. It removes the rewarded ads but does not add local-carrier minutes or credit by itself.</Text>
+                <Text style={s.summaryTitle}>Airbundle eligibility</Text>
+                <Text style={s.summaryText}>Airbundle only affects 9tel-to-9tel calls. It does not add local-carrier minutes or credit by itself.</Text>
               </View>
             </View>
-            <NineTelPlanCards
-              plan="premium"
-              isPremium={user?.isPremium === true}
-              onUpgraded={() => setUser((current: any) => (current ? { ...current, isPremium: true } : current))}
+            <AirbundleCards
+              isActive={user?.isPremium === true}
+              onPurchased={() => setUser((current: any) => (current ? { ...current, isPremium: true } : current))}
             />
-
-            {regionalPlans ? (
-              <>
-                <View style={s.inlineNote}>
-                  <Globe2 size={18} color="#5147AF" />
-                  <Text style={s.noteText}>
-                    Regional monthly bundles shown below remain available for supported countries. They are separate from Free vs Premium and still apply when adding a 9tel number in {regionalPlans.countryName}.
-                  </Text>
-                </View>
-                <CallingPlanTiers
-                  plans={regionalPlans}
-                  selectedTierId={selectedTierId}
-                  onSelect={setSelectedTierId}
-                />
-              </>
-            ) : (
-              <View style={s.inlineNote}>
-                <Globe2 size={18} color="#5147AF" />
-                <Text style={s.noteText}>
-                  Regional monthly bundles are currently listed only for users in the United States, United Kingdom, or Canada.
-                </Text>
-              </View>
-            )}
           </>
         )}
 
-        {selectedTab === "payg" && (
+        {selectedTab === "prepaid" && (
           <>
             <View style={s.summaryCard}>
               <View style={s.summaryIcon}><Gift size={18} color="#5147AF" /></View>
               <View style={s.summaryCopy}>
-                <Text style={s.summaryTitle}>Pay As You Go eligibility</Text>
+                <Text style={s.summaryTitle}>Prepaid eligibility</Text>
                 <Text style={s.summaryText}>Use this only for calls from 9tel to local mobile carriers. New accounts may also have a one-minute welcome reward, depending on the verified-phone status the server reports.</Text>
               </View>
             </View>
-            <PayAsYouGoCard
+            <PrepaidCard
               welcomeReward={welcome}
               welcomeRewardLoading={welcomeLoading}
               onVerifyPhone={() => router.push("/verify-phone")}

@@ -142,7 +142,7 @@ exports.outgoingCallTwiML = async (req, res) => {
 
   // Carrier (PSTN) leg. Enforced here, server-side, from the database — the
   // app's own checks are only a courtesy. Order of precedence:
-  //   1. enough Pay As You Go credits for a minute -> normal billed call
+  //   1. enough Prepaid credits for a minute -> normal billed call
   //   2. otherwise the user's one-time welcome minute, hard-capped by
   //      Twilio itself via <Dial timeLimit>, never by the client
   //   3. otherwise the call is refused
@@ -301,9 +301,9 @@ exports.outgoingDialStatus = async (req, res) => {
       callSid: req.body?.DialCallSid,
     });
 
-    // Pay As You Go billing. `fallbackTo` reaching this far (rather than
+    // Prepaid billing. `fallbackTo` reaching this far (rather than
     // being intercepted above) means the FIRST leg — the app-to-app
-    // attempt — connected: a free/premium 9tel-to-9tel call, not a carrier
+    // attempt — connected: an Airbundle 9tel-to-9tel call, not a carrier
     // leg, so it must never be billed even though `To` is still the E.164
     // number that was originally dialed (Twilio echoes the parent call's
     // own params here, not the Dial leg's). Every other completed leg with

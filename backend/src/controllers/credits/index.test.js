@@ -1,5 +1,5 @@
 /**
- * Pay As You Go credits: balance reads must reflect exactly what the
+ * Prepaid credits: balance reads must reflect exactly what the
  * backend has stored (never a client-side guess), and completed-call
  * billing must be derived from Twilio's own authoritative duration, never
  * invented client-side.

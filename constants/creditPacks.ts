@@ -1,4 +1,4 @@
-// Pay As You Go credit top-up packs — mirrors backend/src/controllers/payments
+// Prepaid credit top-up packs — mirrors backend/src/controllers/payments
 // CREDIT_PACKS exactly (same ids, same cents amounts) so the price shown
 // before checkout always matches what's actually charged. If the backend
 // pack config ever changes, update both sides together.
@@ -17,4 +17,8 @@ export const CREDIT_PACKS: CreditPack[] = [
 
 export function formatCents(cents: number, currencySymbol = "$"): string {
   return `${currencySymbol}${(cents / 100).toFixed(2)}`;
+}
+
+export function formatCreditPackPrice(pack: CreditPack, currency: "USD" | "NGN"): string {
+  return currency === "USD" ? formatCents(pack.priceUsdCents) : `₦${pack.priceNgn.toLocaleString("en-US")}`;
 }

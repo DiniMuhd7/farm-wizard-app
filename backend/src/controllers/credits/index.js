@@ -1,6 +1,6 @@
 const User = require("../../models/User");
 
-// Pay As You Go rate for 9tel-to-carrier calls, in whole US cents per
+// Prepaid rate for 9tel-to-carrier calls, in whole US cents per
 // minute, billed in whole-minute increments (rounded up) against the
 // authoritative duration Twilio reports once the call ends — see
 // controllers/voice's outgoingDialStatus, the only other place this balance

@@ -1,7 +1,7 @@
 /**
  * Eligibility lookup for the calling-plan model: is a given destination
- * another 9tel user (Free/Premium, 9tel-to-9tel) or a local carrier
- * destination (Pay As You Go credits)? See services/callPlans.ts on the
+ * another 9tel user (Airbundle, 9tel-to-9tel) or a local carrier
+ * destination (Prepaid credits)? See services/callPlans.ts on the
  * mobile side, which calls this endpoint before applying a plan.
  */
 

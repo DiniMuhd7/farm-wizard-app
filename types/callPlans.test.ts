@@ -2,17 +2,17 @@ import { describe, expect, it } from "@jest/globals";
 import { resolveCallPlan } from "./callPlans";
 
 describe("resolveCallPlan", () => {
-  it("applies Free to a non-Premium account calling another 9tel user", () => {
-    expect(resolveCallPlan("9tel", false)).toBe("free");
+  it("applies Airbundle to an Airbundle account calling another 9tel user", () => {
+    expect(resolveCallPlan("9tel", true)).toBe("airbundle");
   });
 
-  it("applies Premium to a Premium account calling another 9tel user", () => {
-    expect(resolveCallPlan("9tel", true)).toBe("premium");
+  it("does not resolve a removed free plan for a 9tel destination without an Airbundle", () => {
+    expect(resolveCallPlan("9tel", false)).toBe("unmetered");
   });
 
-  it("applies Pay As You Go to a carrier destination regardless of Premium status", () => {
-    expect(resolveCallPlan("carrier", false)).toBe("payg");
-    expect(resolveCallPlan("carrier", true)).toBe("payg");
+  it("applies Prepaid to a carrier destination regardless of Airbundle status", () => {
+    expect(resolveCallPlan("carrier", false)).toBe("prepaid");
+    expect(resolveCallPlan("carrier", true)).toBe("prepaid");
   });
 
   it("fails open to unmetered when the destination can't be classified", () => {

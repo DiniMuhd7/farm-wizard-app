@@ -166,30 +166,29 @@ export async function checkNumberAvailability(countryCode: string): Promise<Avai
   return data;
 }
 
-async function createCheckoutSession(provider: "stripe" | "flutterwave", countryCode: string): Promise<{ orderId: string; url: string }> {
-  return createPaymentSessionRequest(`/api/v1/payments/${provider}/create-session`, { countryCode });
-}
+// Flutterwave is the only payment provider. The person chooses the
+// currency they pay in (USD or NGN) before checkout starts; the backend
+// charges the matching price for the selected product.
+export type PaymentCurrency = "USD" | "NGN";
+export const PAYMENT_CURRENCIES: PaymentCurrency[] = ["USD", "NGN"];
 
-export const createStripeCheckout = (countryCode: string) => createCheckoutSession("stripe", countryCode);
-export const createFlutterwaveCheckout = (countryCode: string) => createCheckoutSession("flutterwave", countryCode);
+export const createFlutterwaveCheckout = (countryCode: string, currency: PaymentCurrency) =>
+  createPaymentSessionRequest("/api/v1/payments/flutterwave/create-session", { countryCode, currency });
 
-// Premium — ad-free 9tel-to-9tel calling, one 30-day period per purchase;
-// the backend extends the user's existing period rather than overwriting
-// it (see backend/src/controllers/payments' fulfillPremiumOrder), so
-// renewing early never discards already-paid-for days.
-async function createPremiumCheckoutSession(provider: "stripe" | "flutterwave"): Promise<{ orderId: string; url: string }> {
-  return createPaymentSessionRequest(`/api/v1/payments/${provider}/create-premium-session`);
-}
-
-export const createPremiumStripeCheckout = () => createPremiumCheckoutSession("stripe");
-export const createPremiumFlutterwaveCheckout = () => createPremiumCheckoutSession("flutterwave");
+// Airbundle — a selectable minute bundle with ad-free 9tel-to-9tel calling.
+// The backend extends the user's existing ad-free period and adds the
+// bundle's minutes (see backend/src/controllers/payments'
+// fulfillAirbundleOrder), so buying early never discards already-paid-for
+// time.
+export const createAirbundleFlutterwaveCheckout = (bundleId: string, currency: PaymentCurrency) =>
+  createPaymentSessionRequest("/api/v1/payments/flutterwave/create-airbundle-session", { bundleId, currency });
 
 export type OrderStatus = {
-  status: "pending" | "paid" | "paid_unfulfilled" | "refunded" | "failed";
-  kind?: "number" | "credits" | "premium";
+  status: "pending" | "paid" | "paid_unfulfilled" | "refunded" | "failed" | "cancelled";
+  kind?: "number" | "credits" | "airbundle" | "premium";
   phoneNumber: string | null;
   creditsCents?: number;
-  premiumDays?: number;
+  airbundleMinutes?: number;
 };
 
 // Fulfillment happens asynchronously via a provider webhook, not
@@ -201,4 +200,22 @@ export async function getOrderStatus(orderId: string): Promise<OrderStatus> {
   });
   if (!response.ok) throw new Error("Unable to check payment status.");
   return response.json();
+}
+
+export type PaymentOutcome = "paid" | "failed" | "cancelled" | "refunded" | "pending";
+
+// Polls an order after the Flutterwave checkout browser is dismissed.
+// Purchases are only ever applied by the backend after Flutterwave verifies
+// the payment, so "paid" here is authoritative; "pending" means we stopped
+// waiting (not that it failed) — the app can tell the person to check back.
+export async function waitForPaymentOutcome(orderId: string, timeoutMs = 2 * 60 * 1000, intervalMs = 3000): Promise<PaymentOutcome> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    const order = await getOrderStatus(orderId).catch(() => null);
+    if (!order) continue;
+    if (order.status === "paid") return "paid";
+    if (order.status === "failed" || order.status === "cancelled" || order.status === "refunded") return order.status;
+  }
+  return "pending";
 }

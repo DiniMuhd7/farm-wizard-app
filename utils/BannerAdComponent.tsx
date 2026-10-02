@@ -6,12 +6,16 @@ interface Props {
   adUnitId?: string;
   size?: BannerAdSize;
   style?: object;
+  // Lets a parent react to the ad appearing/disappearing (e.g. to add
+  // spacing only while an ad is actually visible).
+  onLoadChange?: (loaded: boolean) => void;
 }
 
 const BannerAdComponent = ({
   adUnitId = __DEV__ ? TestIds.BANNER : "ca-app-pub-4516568539037938/3383596217",
   size = BannerAdSize.ANCHORED_ADAPTIVE_BANNER,
   style = {},
+  onLoadChange,
 }: Props) => {
   const { width } = useWindowDimensions();
   // Adaptive banners calculate their creative size from the mounted view width.
@@ -47,9 +51,13 @@ const BannerAdComponent = ({
           requestOptions={{
             requestNonPersonalizedAdsOnly: true,
           }}
-          onAdLoaded={() => setLoaded(true)}
+          onAdLoaded={() => {
+            setLoaded(true);
+            onLoadChange?.(true);
+          }}
           onAdFailedToLoad={(error) => {
             setLoaded(false);
+            onLoadChange?.(false);
             console.warn("Banner ad failed to load:", error?.message || error);
           }}
         />

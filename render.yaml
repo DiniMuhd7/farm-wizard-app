@@ -40,11 +40,6 @@ services:
         sync: false
       - key: TWILIO_ALLOWED_DESTINATION_PREFIXES
         sync: false
-      # Stripe webhook endpoint: ${PUBLIC_BASE_URL}/api/v1/payments/stripe/webhook
-      - key: STRIPE_SECRET_KEY
-        sync: false
-      - key: STRIPE_WEBHOOK_SECRET
-        sync: false
       # Flutterwave webhook endpoint: ${PUBLIC_BASE_URL}/api/v1/payments/flutterwave/webhook
       - key: FLW_SECRET_KEY
         sync: false

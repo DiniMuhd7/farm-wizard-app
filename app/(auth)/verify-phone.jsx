@@ -113,6 +113,9 @@ export default function VerifyPhone() {
     pollRef.current = setInterval(async () => {
       try {
         const status = await getCallerIdVerificationStatus();
+        // Ignore a response that lands after polling was stopped (e.g. the
+        // code was just accepted), so a stale poll cannot undo the result.
+        if (!pollRef.current) return;
         if (status.callerIdStatus === "verified" && status.verifiedCallerId === expectedNumber) {
           showVerified(status.verifiedCallerId, status.method);
         } else if (status.callerIdStatus === "failed" || status.callerIdStatus === "expired") {

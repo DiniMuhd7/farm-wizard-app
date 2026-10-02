@@ -327,6 +327,32 @@ describe("callerid controller (spoken code + app entry)", () => {
       expect(rewards.ensureWelcomeReward).not.toHaveBeenCalled();
     });
 
+    it("reports no active verification when the session is consumed between the check and the count", async () => {
+      const { code, update } = await startAndCaptureCode();
+      User.findOneAndUpdate.mockReset().mockResolvedValueOnce(null);
+      User.findById
+        .mockReturnValueOnce(lean(pendingUser(update)))
+        .mockReturnValueOnce(lean({ callerIdStatus: "verified", callerIdVerificationSessionId: null }));
+      const res = mockRes();
+      await callerid.submitVerificationCode({ user: owner, body: { code } }, res);
+      expect(res.statusCode).toBe(409);
+      expect(res.body.code).toBe("no_active_verification");
+      expect(User.findOneAndUpdate).toHaveBeenCalledTimes(1);
+    });
+
+    it("reports expiry when the session expires between the check and the count", async () => {
+      const { code, update } = await startAndCaptureCode();
+      User.findOneAndUpdate.mockReset().mockResolvedValue({ _id: userId });
+      User.findOneAndUpdate.mockResolvedValueOnce(null);
+      User.findById
+        .mockReturnValueOnce(lean(pendingUser(update)))
+        .mockReturnValueOnce(lean(pendingUser(update, { callerIdVerificationExpiresAt: new Date(Date.now() - 1) })));
+      const res = mockRes();
+      await callerid.submitVerificationCode({ user: owner, body: { code } }, res);
+      expect(res.statusCode).toBe(410);
+      expect(res.body.callerIdStatus).toBe("expired");
+    });
+
     it("rejects an expired session and persists the expiry", async () => {
       const { code, update } = await startAndCaptureCode();
       User.findOneAndUpdate.mockReset().mockResolvedValue({ _id: userId });

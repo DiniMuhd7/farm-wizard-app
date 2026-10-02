@@ -43,10 +43,12 @@ export function describeWelcomeReward(reward: WelcomeRewardStatus | null | undef
 }
 
 export function describeEffectiveAvailability(reward: WelcomeRewardStatus | null | undefined, hasPurchasedCredit: boolean): string {
-  if (reward?.effectiveAvailability === "free_minute" || (!hasPurchasedCredit && reward?.status === "available")) {
-    return "You can call local mobile numbers now using your free minute.";
-  }
-  if (hasPurchasedCredit) return "You can call local mobile numbers using your purchased credit.";
+  // Prefer the server-computed value; derive locally only if it is absent.
+  const effective =
+    reward?.effectiveAvailability ??
+    (hasPurchasedCredit ? "credits" : reward?.status === "available" || reward?.status === "in_use" ? "free_minute" : "none");
+  if (effective === "free_minute") return "You can call local mobile numbers now using your free minute.";
+  if (effective === "credits") return "You can call local mobile numbers using your purchased credit.";
   return "Top up to call local mobile numbers.";
 }
 

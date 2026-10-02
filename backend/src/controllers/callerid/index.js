@@ -247,6 +247,7 @@ exports.startVerification = async (req, res) => {
       return res.status(409).json({ code: "verification_pending", message: "Cancel or finish the current verification before starting another." });
     }
 
+    let callSid;
     try {
       const baseUrl = process.env.PUBLIC_BASE_URL.replace(/\/$/, "");
       const call = await twilioClient().calls.create({
@@ -258,12 +259,7 @@ exports.startVerification = async (req, res) => {
         statusCallbackMethod: "POST",
         statusCallbackEvent: ["completed"],
       });
-      if (call?.sid) {
-        await User.findOneAndUpdate(
-          { _id: req.user._id, callerIdStatus: "pending", callerIdVerificationSessionId: sessionId },
-          { callerIdVerificationCallSid: call.sid }
-        );
-      }
+      callSid = call?.sid;
     } catch (error) {
       await failPendingSession(req.user._id, sessionId);
       const failure = providerError(error);
@@ -271,6 +267,18 @@ exports.startVerification = async (req, res) => {
       return respond(res, failure.status, sessionId, { code: failure.code, message: failure.message });
     }
 
+    // Best-effort bookkeeping: the call is already placed and the code spoken,
+    // so a failure here must not kill the session.
+    if (callSid) {
+      try {
+        await User.findOneAndUpdate(
+          { _id: req.user._id, callerIdStatus: "pending", callerIdVerificationSessionId: sessionId },
+          { callerIdVerificationCallSid: callSid }
+        );
+      } catch (error) {
+        logAttempt("warn", "could not record call sid", sessionId);
+      }
+    }
     logAttempt("info", "voice call requested", sessionId);
     // The code is never returned to or displayed in the app: it is only
     // spoken on the possession-verification call.
@@ -327,6 +335,19 @@ exports.submitVerificationCode = async (req, res) => {
       { new: true }
     );
     if (!counted) {
+      // Not counted: the session ran out of attempts, or was consumed,
+      // cancelled or expired after the check above. Report which.
+      const latest = await User.findById(req.user._id)
+        .select("callerIdStatus callerIdVerificationSessionId callerIdVerificationAttempts callerIdVerificationExpiresAt")
+        .lean();
+      const stillActive = latest?.callerIdStatus === "pending" && latest.callerIdVerificationSessionId === sessionId;
+      if (!stillActive) {
+        return respond(res, 409, sessionId, { code: "no_active_verification", message: "This verification is no longer active. Check your status or request a new call." });
+      }
+      if (new Date(latest.callerIdVerificationExpiresAt).getTime() <= Date.now()) {
+        await expirePendingVerification(req.user._id);
+        return respond(res, 410, sessionId, { code: "verification_expired", callerIdStatus: "expired", message: "This code expired. Request a new call." });
+      }
       await failPendingSession(req.user._id, sessionId);
       logAttempt("warn", "attempt limit reached", sessionId);
       return respond(res, 429, sessionId, { code: "too_many_attempts", callerIdStatus: "failed", message: "Too many incorrect codes. Request a new call." });

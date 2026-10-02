@@ -7,8 +7,10 @@ jest.mock("../../models/Order", () => ({
   findById: jest.fn(),
   findOne: jest.fn(),
   updateOne: jest.fn(),
+  findOneAndUpdate: jest.fn(),
 }));
 jest.mock("../numbers", () => ({ purchaseAndAssignNumber: jest.fn() }));
+jest.mock("../../models/User", () => ({ findById: jest.fn(), findByIdAndUpdate: jest.fn() }));
 
 const ORIGINAL_ENV = process.env;
 
@@ -243,7 +245,7 @@ describe("payments controller — checkout session init", () => {
     await paymentReturnPage({ query: { status: "successful", tx_ref: "9tel-ref-6", transaction_id: "42" } }, res);
 
     expect(order.status).toBe("failed");
-    expect(res.html).toContain("Payment didn&#39;t go through".replace("&#39;", "'"));
+    expect(res.html).toContain("Payment didn't go through");
   });
 
   it("marks a pending order cancelled when the person backs out of checkout", async () => {
@@ -259,5 +261,79 @@ describe("payments controller — checkout session init", () => {
       { status: "cancelled" }
     );
     expect(res.html).toContain("Payment cancelled");
+  });
+
+  describe("verified fulfillment (webhook)", () => {
+    function webhookReq(overrides = {}) {
+      return { headers: { "verif-hash": "hash123" }, body: { data: { tx_ref: "9tel-ref-8", id: 99 } }, ...overrides };
+    }
+
+    beforeEach(() => {
+      process.env.FLW_SECRET_HASH = "hash123";
+    });
+
+    it("claims and fulfills the order only after Flutterwave verifies amount, currency and tx_ref", async () => {
+      const Order = require("../../models/Order");
+      const order = fakeOrder({ providerReference: "9tel-ref-8", amount: 12000, currency: "NGN", kind: "airbundle", bundleMinutes: 500, premiumDays: 30, status: "pending", user: "user1" });
+      Order.findOne.mockResolvedValue(order);
+      Order.findOneAndUpdate.mockResolvedValue(order);
+      mockAxiosGet.mockResolvedValue({ data: { data: { status: "successful", amount: 12000, currency: "NGN", tx_ref: "9tel-ref-8" } } });
+      const User = require("../../models/User");
+      User.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ premiumUntil: null }) });
+      User.findByIdAndUpdate.mockResolvedValue({});
+      const { flutterwaveWebhook } = require("./index");
+
+      await flutterwaveWebhook(webhookReq(), mockRes());
+
+      expect(mockAxiosGet).toHaveBeenCalledWith("https://api.flutterwave.com/v3/transactions/99/verify", expect.any(Object));
+      expect(Order.findOneAndUpdate).toHaveBeenCalledWith(
+        expect.objectContaining({ _id: order._id }),
+        { status: "processing", providerChargeId: "99" },
+        { new: true }
+      );
+      expect(User.findByIdAndUpdate).toHaveBeenCalledWith("user1", expect.objectContaining({ $inc: { airbundleMinutes: 500 } }));
+      expect(order.status).toBe("paid");
+    });
+
+    it("does not fulfill when another request already claimed the order", async () => {
+      const Order = require("../../models/Order");
+      Order.findOne.mockResolvedValue(fakeOrder({ providerReference: "9tel-ref-8", amount: 12000, currency: "NGN", status: "pending" }));
+      Order.findOneAndUpdate.mockResolvedValue(null);
+      mockAxiosGet.mockResolvedValue({ data: { data: { status: "successful", amount: 12000, currency: "NGN", tx_ref: "9tel-ref-8" } } });
+      const User = require("../../models/User");
+      User.findByIdAndUpdate.mockReset();
+      const { flutterwaveWebhook } = require("./index");
+
+      await flutterwaveWebhook(webhookReq(), mockRes());
+
+      expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it("never fulfills on an amount or currency mismatch", async () => {
+      const Order = require("../../models/Order");
+      Order.findOne.mockResolvedValue(fakeOrder({ providerReference: "9tel-ref-8", amount: 12000, currency: "NGN", status: "pending" }));
+      Order.findOneAndUpdate.mockReset();
+      const { flutterwaveWebhook } = require("./index");
+
+      mockAxiosGet.mockResolvedValue({ data: { data: { status: "successful", amount: 100, currency: "NGN", tx_ref: "9tel-ref-8" } } });
+      await flutterwaveWebhook(webhookReq(), mockRes());
+      mockAxiosGet.mockResolvedValue({ data: { data: { status: "successful", amount: 12000, currency: "USD", tx_ref: "9tel-ref-8" } } });
+      await flutterwaveWebhook(webhookReq(), mockRes());
+
+      expect(Order.findOneAndUpdate).not.toHaveBeenCalled();
+    });
+
+    it("rejects a bad signature and ignores a non-numeric transaction id", async () => {
+      const { flutterwaveWebhook } = require("./index");
+      const Order = require("../../models/Order");
+      Order.findOne.mockReset();
+
+      const res = { ...mockRes(), send() { return this; } };
+      await flutterwaveWebhook(webhookReq({ headers: { "verif-hash": "wrong" } }), res);
+      expect(res.statusCode).toBe(401);
+
+      await flutterwaveWebhook(webhookReq({ body: { data: { tx_ref: "9tel-ref-8", id: "../x" } } }), mockRes());
+      expect(mockAxiosGet).not.toHaveBeenCalled();
+    });
   });
 });

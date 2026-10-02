@@ -81,10 +81,10 @@ describe("fulfillAirbundleOrder", () => {
     expect(order.fulfilledPremiumDays).toBe(30);
     const [userId, update] = User.findByIdAndUpdate.mock.calls[0];
     expect(userId).toBe("user1");
-    expect(update.isPremium).toBe(true);
+    expect(update.$set.isPremium).toBe(true);
     expect(update.$inc).toEqual({ airbundleMinutes: 1500 });
     const expectedMin = before + 29 * 24 * 60 * 60 * 1000;
-    expect(update.premiumUntil.getTime()).toBeGreaterThan(expectedMin);
+    expect(update.$set.premiumUntil.getTime()).toBeGreaterThan(expectedMin);
   });
 
   it("extends an already-active ad-free period instead of overwriting it with a shorter one", async () => {
@@ -99,7 +99,7 @@ describe("fulfillAirbundleOrder", () => {
     // Base is the existing premiumUntil (10 days out), plus 30 more days —
     // not "now + 30", which would discard the 10 days already paid for.
     const expectedUntil = stillActive.getTime() + 30 * 24 * 60 * 60 * 1000;
-    expect(update.premiumUntil.getTime()).toBe(expectedUntil);
+    expect(update.$set.premiumUntil.getTime()).toBe(expectedUntil);
   });
 
   it("is a no-op on webhook redelivery once already fulfilled", async () => {

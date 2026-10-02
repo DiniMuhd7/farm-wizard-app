@@ -49,7 +49,8 @@ const orderSchema = new mongoose.Schema(
       // distinct from "failed" (payment itself never succeeded), because
       // this state means a refund is owed.
       // cancelled: the person backed out of Flutterwave's checkout page.
-      enum: ["pending", "paid", "paid_unfulfilled", "refunded", "failed", "cancelled"],
+      // processing: payment verified; claimed by exactly one fulfiller.
+      enum: ["pending", "processing", "paid", "paid_unfulfilled", "refunded", "failed", "cancelled"],
       default: "pending",
     },
     // Set once purchaseAndAssignNumber() actually succeeds for this order —

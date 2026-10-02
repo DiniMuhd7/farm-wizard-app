@@ -24,6 +24,15 @@ const checkoutRateLimit = rateLimit({
 });
 // Flutterwave is the only payment provider. Every create-session body
 // includes `currency` ("USD" or "NGN"), chosen by the person before paying.
+// Order polling, the post-checkout return page and the webhook all touch the
+// database, so they get a (more generous) limiter of their own.
+const statusRateLimit = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: "Too many requests. Please slow down." },
+});
 router.post("/flutterwave/create-session", checkoutRateLimit, protect, createFlutterwaveSession);
 // Prepaid credits top-up checkout — a different product (balance, not a
 // phone number). See controllers/payments' CREDIT_PACKS and
@@ -35,8 +44,8 @@ router.post("/flutterwave/create-airbundle-session", checkoutRateLimit, protect,
 // Flutterwave's webhook is authenticated by a header string-compare (see
 // the controller's own comment), not a body signature, so it has no
 // special body-parsing requirement.
-router.post("/flutterwave/webhook", flutterwaveWebhook);
-router.get("/orders/:id", protect, getOrderStatus);
-router.get("/return", paymentReturnPage);
+router.post("/flutterwave/webhook", statusRateLimit, flutterwaveWebhook);
+router.get("/orders/:id", statusRateLimit, protect, getOrderStatus);
+router.get("/return", statusRateLimit, paymentReturnPage);
 
 module.exports = router;

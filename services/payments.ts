@@ -184,7 +184,7 @@ export const createAirbundleFlutterwaveCheckout = (bundleId: string, currency: P
   createPaymentSessionRequest("/api/v1/payments/flutterwave/create-airbundle-session", { bundleId, currency });
 
 export type OrderStatus = {
-  status: "pending" | "paid" | "paid_unfulfilled" | "refunded" | "failed" | "cancelled";
+  status: "pending" | "processing" | "paid" | "paid_unfulfilled" | "refunded" | "failed" | "cancelled";
   kind?: "number" | "credits" | "airbundle" | "premium";
   phoneNumber: string | null;
   creditsCents?: number;

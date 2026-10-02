@@ -4,7 +4,7 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   getItem: jest.fn(async () => "test-token"),
 }));
 
-import { AvailableCountriesError, getAvailableNumberCountries } from "./payments";
+import { AvailableCountriesError, getAvailableNumberCountries, waitForPaymentOutcome } from "./payments";
 
 const originalFetch = global.fetch;
 
@@ -137,5 +137,35 @@ describe("getAvailableNumberCountries", () => {
 
     expect(result).toEqual([]);
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("waitForPaymentOutcome", () => {
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  const respondWith = (...statuses: (string | null)[]) => {
+    const queue = [...statuses];
+    global.fetch = jest.fn(async () => {
+      const status = queue.length > 1 ? queue.shift() : queue[0];
+      if (status === null) throw new Error("offline");
+      return { ok: true, json: async () => ({ status, phoneNumber: null }) };
+    }) as any;
+  };
+
+  it.each(["paid", "failed", "cancelled", "refunded"] as const)("resolves %s as soon as the backend reports it", async (status) => {
+    respondWith("pending", status);
+    await expect(waitForPaymentOutcome("order1", 1000, 1)).resolves.toBe(status);
+  });
+
+  it("keeps polling through transient errors", async () => {
+    respondWith(null, "paid");
+    await expect(waitForPaymentOutcome("order1", 1000, 1)).resolves.toBe("paid");
+  });
+
+  it("reports pending (not failed) when the deadline passes without a terminal status", async () => {
+    respondWith("pending");
+    await expect(waitForPaymentOutcome("order1", 20, 5)).resolves.toBe("pending");
   });
 });

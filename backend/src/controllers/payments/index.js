@@ -146,9 +146,10 @@ function respondToPaymentInitError(res, label, error) {
 }
 
 async function refundFlutterwave(order) {
-  if (!order.providerChargeId) throw new Error("No transaction id recorded for this order.");
+  const transactionId = Number(order.providerChargeId);
+  if (!Number.isSafeInteger(transactionId) || transactionId <= 0) throw new Error("No transaction id recorded for this order.");
   await axios.post(
-    `https://api.flutterwave.com/v3/transactions/${order.providerChargeId}/refund`,
+    `https://api.flutterwave.com/v3/transactions/${transactionId}/refund`,
     { comments: "9tel: number unavailable at fulfillment time" },
     { headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY}` } }
   );
@@ -219,8 +220,7 @@ async function fulfillAirbundleOrder(order) {
     const base = user?.premiumUntil && new Date(user.premiumUntil).getTime() > now ? new Date(user.premiumUntil).getTime() : now;
     const premiumUntil = new Date(base + days * 24 * 60 * 60 * 1000);
     await User.findByIdAndUpdate(order.user, {
-      isPremium: true,
-      premiumUntil,
+      $set: { isPremium: true, premiumUntil },
       ...(order.bundleMinutes ? { $inc: { airbundleMinutes: order.bundleMinutes } } : {}),
     });
     order.status = "paid";
@@ -385,10 +385,12 @@ exports.createAirbundleFlutterwaveSession = (req, res) =>
 // amount in its currency. Idempotent: webhook redeliveries and the
 // redirect-return both call this safely.
 async function verifyAndFulfill(txRef, transactionId) {
+  const numericTransactionId = Number(transactionId); // Flutterwave transaction ids are numeric
+  if (!Number.isSafeInteger(numericTransactionId) || numericTransactionId <= 0) return null;
   const order = await Order.findOne({ providerReference: txRef, provider: "flutterwave" });
   if (!order) return null;
 
-  const verifyResponse = await axios.get(`https://api.flutterwave.com/v3/transactions/${encodeURIComponent(transactionId)}/verify`, {
+  const verifyResponse = await axios.get(`https://api.flutterwave.com/v3/transactions/${numericTransactionId}/verify`, {
     headers: { Authorization: "Bearer " + process.env.FLW_SECRET_KEY },
   });
   const verified = verifyResponse.data?.data;
@@ -396,11 +398,31 @@ async function verifyAndFulfill(txRef, transactionId) {
   const referenceMatches = verified && verified.tx_ref === order.providerReference;
 
   if (verified?.status === "successful" && amountMatches && referenceMatches) {
-    // Needed up front — refunds need the transaction id.
-    order.providerChargeId = String(transactionId);
-    await order.save();
-    await fulfillOrder(order);
-  } else if (order.status === "pending" || order.status === "cancelled") {
+    // Atomically claim the order before fulfilling, so a webhook and the
+    // return page verifying the same payment at the same moment can't both
+    // fulfill it (double-crediting). The transaction id is recorded here
+    // too — refunds need it.
+    const claimed = await Order.findOneAndUpdate(
+      { _id: order._id, status: { $in: ["pending", "cancelled", "failed"] } },
+      { status: "processing", providerChargeId: String(numericTransactionId) },
+      { new: true }
+    );
+    if (claimed) {
+      try {
+        await fulfillOrder(claimed);
+      } catch (error) {
+        // Unexpected failure (the fulfill helpers handle their own errors
+        // and refunds) — release the claim so a webhook redelivery can
+        // retry instead of leaving a paid order stuck in "processing".
+        await Order.updateOne({ _id: claimed._id, status: "processing" }, { status: "pending" });
+        throw error;
+      }
+    }
+    return claimed || order;
+  } else if (verified?.status === "failed" && (order.status === "pending" || order.status === "cancelled")) {
+    // Only an explicit terminal failure from Flutterwave counts — a
+    // transaction that is still processing stays pending so a later
+    // successful webhook can still fulfill it.
     order.status = "failed";
     await order.save();
   }
@@ -477,6 +499,7 @@ exports.getOrderStatus = async (req, res) => {
     kind: order.kind,
     phoneNumber: order.fulfilledPhoneNumber,
     creditsCents: order.fulfilledCreditsCents,
+    premiumDays: order.fulfilledPremiumDays || undefined,
     airbundleMinutes: order.kind === "airbundle" && order.fulfilledPremiumDays ? order.bundleMinutes : undefined,
   });
 };

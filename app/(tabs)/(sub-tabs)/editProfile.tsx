@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { router } from "expo-router";
 import { View, Text, ScrollView, Alert, Pressable, StyleSheet } from "react-native";
-import { ArrowLeft, LockKeyhole, UserRound } from "lucide-react-native";
+import { ArrowLeft, CircleAlert, CircleCheckBig, LockKeyhole, UserRound } from "lucide-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useTranslation } from "react-i18next";
 
@@ -11,6 +11,18 @@ import LanguageSwitching from "@/components/LanguageSwitching";
 import { validateForm } from "../../../utils/validateForm";
 import { updateUser } from "@/services/user";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+
+type FormErrors = {
+  fullName?: string;
+  password?: string;
+  cpassword?: string;
+};
+
+type FeedbackState =
+  | { type: "success"; message: string }
+  | { type: "validation"; message: string }
+  | { type: "error"; message: string }
+  | null;
 
 const EditProfile = () => {
   const { user, setUser } = useLoginContext();
@@ -31,13 +43,8 @@ const EditProfile = () => {
   }, [user]);
 
   const [isSubmitting, setSubmitting] = useState(false);
-  interface FormErrors {
-    fullName?: string;
-    password?: string;
-    cpassword?: string;
-  }
-
   const [errors, setErrors] = useState<FormErrors>({});
+  const [feedback, setFeedback] = useState<FeedbackState>(null);
   const selectedIndex = user?.avatar || 0;
 
   const [form, setForm] = useState({
@@ -49,7 +56,14 @@ const EditProfile = () => {
 
   if (!user) return null; // the effect above is already sending us elsewhere
 
+  const updateField = (field: keyof typeof form, value: string) => {
+    setForm((current) => ({ ...current, [field]: value }));
+    setErrors((current) => ({ ...current, [field]: undefined }));
+    if (feedback) setFeedback(null);
+  };
+
   const handleUpdate = async () => {
+    setFeedback(null);
     const { isValid, errors: validationErrors } = validateForm(
       {
         ...form,
@@ -63,29 +77,54 @@ const EditProfile = () => {
       // meet the normal password rules (validateForm handles that).
       { requirePassword: false }
     );
-    if (isValid) {
-      setSubmitting(true);
-      const token = await AsyncStorage.getItem("token");
-      if (token !== null) {
-        try {
-          const result = await updateUser(
-            token,
-            form.fullName,
-            form.password,
-            selectedIndex
-          );
-          Alert.alert("Success", result.message);
-          setUser(result.userDetails);
-          setForm((f) => ({ ...f, password: "", cpassword: "" }));
-        } catch (error: any) {
-          console.log("error ", error);
-          Alert.alert("Error occured", error.message);
-        } finally {
-          setSubmitting(false);
-        }
-      }
-    } else {
+    if (!isValid) {
       setErrors(validationErrors);
+      setFeedback({
+        type: "validation",
+        message: "Please fix the highlighted fields before saving your profile.",
+      });
+      return;
+    }
+
+    setErrors({});
+    setSubmitting(true);
+    const token = await AsyncStorage.getItem("token");
+    if (token === null) {
+      setFeedback({
+        type: "error",
+        message: "Your session expired. Please sign in again before saving changes.",
+      });
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const result = await updateUser(
+        token,
+        form.fullName.trim(),
+        form.password,
+        selectedIndex
+      );
+      setUser(result.userDetails);
+      setForm((f) => ({ ...f, fullName: result.userDetails?.fullName ?? f.fullName, password: "", cpassword: "" }));
+      setFeedback({
+        type: "success",
+        message: result.message || "Your profile details were saved successfully.",
+      });
+    } catch (error: any) {
+      console.log("error ", error);
+      const serverMessage = error?.response?.data?.message;
+      const message = serverMessage
+        ? serverMessage
+        : error?.request
+          ? "We couldn't reach 9tel right now. Check your connection and try again."
+          : error?.message || "We couldn't save your profile right now.";
+      setFeedback({
+        type: "error",
+        message,
+      });
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -102,6 +141,7 @@ const EditProfile = () => {
 
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
           <View style={styles.profileCard}>
+            <Text style={styles.profileEyebrow}>9TEL ACCOUNT</Text>
             <View style={styles.avatar}><UserRound size={28} color="#5147AF" /></View>
             <Text style={styles.profileName}>{user.fullName}</Text>
             {!!user.email && <Text style={styles.email}>{user.email}</Text>}
@@ -109,6 +149,33 @@ const EditProfile = () => {
               <Text style={styles.guest}>Guest account · create an account to keep your number and call history.</Text>
             )}
           </View>
+
+          {feedback && (
+            <View
+              style={[
+                styles.feedbackCard,
+                feedback.type === "success" && styles.feedbackSuccess,
+                feedback.type === "validation" && styles.feedbackValidation,
+                feedback.type === "error" && styles.feedbackError,
+              ]}
+            >
+              {feedback.type === "success" ? (
+                <CircleCheckBig size={18} color="#1E7A4D" />
+              ) : (
+                <CircleAlert size={18} color={feedback.type === "validation" ? "#8A5B00" : "#B04545"} />
+              )}
+              <Text
+                style={[
+                  styles.feedbackText,
+                  feedback.type === "success" && styles.feedbackTextSuccess,
+                  feedback.type === "validation" && styles.feedbackTextValidation,
+                  feedback.type === "error" && styles.feedbackTextError,
+                ]}
+              >
+                {feedback.message}
+              </Text>
+            </View>
+          )}
 
           <Text style={styles.sectionTitle}>PREFERENCES</Text>
           <View style={styles.languageCard}>
@@ -122,8 +189,11 @@ const EditProfile = () => {
               title={t("fullname")}
               placeholder="Full name"
               value={form.fullName}
-              handleChangeText={(e: any) => setForm({ ...form, fullName: e })}
+              handleChangeText={(value) => updateField("fullName", value)}
               variant="light"
+              autoCapitalize="words"
+              autoCorrect={false}
+              textContentType="name"
             />
             {errors.fullName && <Text style={styles.error}>{errors.fullName}</Text>}
           </View>
@@ -140,19 +210,25 @@ const EditProfile = () => {
               title={t("password")}
               placeholder="New password (optional)"
               value={form.password}
-              handleChangeText={(e: any) => setForm({ ...form, password: e })}
+              handleChangeText={(value) => updateField("password", value)}
               secureTextEntry
               variant="light"
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="newPassword"
             />
             {errors.password && <Text style={styles.error}>{errors.password}</Text>}
             <FormField
               title={t("confirm_password")}
               placeholder="Confirm new password"
               value={form.cpassword}
-              handleChangeText={(e: any) => setForm({ ...form, cpassword: e })}
+              handleChangeText={(value) => updateField("cpassword", value)}
               otherStyles="mt-4"
               secureTextEntry
               variant="light"
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="password"
             />
             {errors.cpassword && <Text style={styles.error}>{errors.cpassword}</Text>}
           </View>
@@ -163,7 +239,13 @@ const EditProfile = () => {
             containerStyles="w-full"
             textStyles="font-pbold text-white"
             isLoading={isSubmitting}
+            disabled={isSubmitting}
           />
+          <Text style={styles.saveHint}>
+            {isSubmitting
+              ? "Saving your changes securely…"
+              : "Your profile only updates after 9tel confirms the change."}
+          </Text>
         </ScrollView>
       </View>
     </SafeAreaView>
@@ -179,10 +261,19 @@ const styles = StyleSheet.create({
   title: { color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 18 },
   content: { paddingBottom: 36 },
   profileCard: { backgroundColor: "#211B59", borderRadius: 24, alignItems: "center", padding: 22, marginTop: 12 },
+  profileEyebrow: { color: "#DCD8FF", fontFamily: "Poppins-SemiBold", fontSize: 10, letterSpacing: 1, marginBottom: 14 },
   avatar: { height: 58, width: 58, borderRadius: 20, backgroundColor: "#EEECFF", alignItems: "center", justifyContent: "center" },
   profileName: { color: "#FFF", fontFamily: "Poppins-SemiBold", fontSize: 18, marginTop: 11 },
   email: { color: "#CFCBFF", fontFamily: "Poppins-Regular", fontSize: 11, marginTop: 2 },
   guest: { color: "#F5D9A8", fontFamily: "Poppins-Regular", fontSize: 10.5, lineHeight: 16, textAlign: "center", marginTop: 10 },
+  feedbackCard: { flexDirection: "row", alignItems: "flex-start", gap: 10, borderRadius: 18, paddingHorizontal: 15, paddingVertical: 14, marginTop: 16, borderWidth: 1 },
+  feedbackSuccess: { backgroundColor: "#EAF8EF", borderColor: "#CBE8D6" },
+  feedbackValidation: { backgroundColor: "#FFF6DA", borderColor: "#F4D58B" },
+  feedbackError: { backgroundColor: "#FDECEC", borderColor: "#F3C8C8" },
+  feedbackText: { flex: 1, fontFamily: "Poppins-Medium", fontSize: 11.5, lineHeight: 17 },
+  feedbackTextSuccess: { color: "#22583D" },
+  feedbackTextValidation: { color: "#7A5608" },
+  feedbackTextError: { color: "#8C2E2E" },
   sectionTitle: { color: "#8D899F", fontFamily: "Poppins-SemiBold", fontSize: 10, letterSpacing: 1, marginTop: 23, marginBottom: 8 },
   languageCard: { backgroundColor: "#FFF", borderRadius: 19, paddingHorizontal: 15, paddingTop: 14, overflow: "hidden" },
   fieldTitle: { color: "#514D66", fontFamily: "Poppins-Medium", fontSize: 12, paddingHorizontal: 5 },
@@ -195,6 +286,7 @@ const styles = StyleSheet.create({
   passwordCopy: { flex: 1 },
   passwordTitle: { color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 13 },
   passwordHint: { color: "#85829B", fontFamily: "Poppins-Regular", fontSize: 10, marginTop: 2 },
+  saveHint: { color: "#85829B", fontFamily: "Poppins-Regular", fontSize: 10.5, lineHeight: 16, textAlign: "center", marginTop: 10, marginHorizontal: 12 },
 });
 
 export default EditProfile;

@@ -3,7 +3,7 @@ import { API_BASE } from "@/config/client";
 
 async function authHeader() {
   const token = await AsyncStorage.getItem("token");
-  if (!token) throw new Error("Sign in to get a number.");
+  if (!token) throw new Error("Sign in to continue.");
   return { Authorization: `Bearer ${token}` };
 }
 
@@ -35,6 +35,69 @@ export class AvailableCountriesError extends Error {
 // this, a stalled connection left the picker's loading spinner spinning
 // forever instead of surfacing a retryable error.
 const AVAILABLE_COUNTRIES_TIMEOUT_MS = 15000;
+
+export type PaymentInitErrorCode = "validation_error" | "config_error" | "provider_error" | "network_error" | "malformed_response";
+
+export class PaymentInitError extends Error {
+  code: PaymentInitErrorCode;
+  retryable: boolean;
+  constructor(message: string, code: PaymentInitErrorCode) {
+    super(message);
+    this.name = "PaymentInitError";
+    this.code = code;
+    this.retryable = code !== "config_error";
+  }
+}
+
+function isPaymentInitErrorCode(code: unknown): code is PaymentInitErrorCode {
+  return ["validation_error", "config_error", "provider_error", "network_error", "malformed_response"].includes(String(code));
+}
+
+function paymentInitMessage(code: PaymentInitErrorCode, fallback?: string): string {
+  switch (code) {
+    case "validation_error":
+      return "That didn't go through — check your details and try again.";
+    case "config_error":
+      return "Payment setup isn't available right now — please try again in a few minutes.";
+    case "network_error":
+      return "We couldn't reach the payment provider — check your connection and try again.";
+    case "provider_error":
+      return fallback || "That didn't go through — please try again in a moment.";
+    default:
+      return fallback || "Unable to start payment right now.";
+  }
+}
+
+export function toPaymentInitError(error: unknown): PaymentInitError {
+  if (error instanceof PaymentInitError) return error;
+  return new PaymentInitError((error as Error)?.message || "Unable to start payment right now.", "provider_error");
+}
+
+export async function createPaymentSessionRequest(
+  path: string,
+  body?: Record<string, string>,
+): Promise<{ orderId: string; url: string }> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: { ...(await authHeader()), "Content-Type": "application/json" },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch {
+    throw new PaymentInitError(paymentInitMessage("network_error"), "network_error");
+  }
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const code = isPaymentInitErrorCode(data?.code) ? data.code : "provider_error";
+    throw new PaymentInitError(paymentInitMessage(code, typeof data?.message === "string" ? data.message : undefined), code);
+  }
+  if (!data || typeof data.orderId !== "string" || typeof data.url !== "string") {
+    throw new PaymentInitError(paymentInitMessage("malformed_response"), "malformed_response");
+  }
+  return data;
+}
 
 export async function getAvailableNumberCountries(countries: { value: string }[]): Promise<string[]> {
   const countryCodes = [...new Set(
@@ -104,14 +167,7 @@ export async function checkNumberAvailability(countryCode: string): Promise<Avai
 }
 
 async function createCheckoutSession(provider: "stripe" | "flutterwave", countryCode: string): Promise<{ orderId: string; url: string }> {
-  const response = await fetch(`${API_BASE}/api/v1/payments/${provider}/create-session`, {
-    method: "POST",
-    headers: { ...(await authHeader()), "Content-Type": "application/json" },
-    body: JSON.stringify({ countryCode }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.message || "Unable to start payment right now.");
-  return data;
+  return createPaymentSessionRequest(`/api/v1/payments/${provider}/create-session`, { countryCode });
 }
 
 export const createStripeCheckout = (countryCode: string) => createCheckoutSession("stripe", countryCode);
@@ -122,13 +178,7 @@ export const createFlutterwaveCheckout = (countryCode: string) => createCheckout
 // it (see backend/src/controllers/payments' fulfillPremiumOrder), so
 // renewing early never discards already-paid-for days.
 async function createPremiumCheckoutSession(provider: "stripe" | "flutterwave"): Promise<{ orderId: string; url: string }> {
-  const response = await fetch(`${API_BASE}/api/v1/payments/${provider}/create-premium-session`, {
-    method: "POST",
-    headers: { ...(await authHeader()), "Content-Type": "application/json" },
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.message || "Unable to start payment right now.");
-  return data;
+  return createPaymentSessionRequest(`/api/v1/payments/${provider}/create-premium-session`);
 }
 
 export const createPremiumStripeCheckout = () => createPremiumCheckoutSession("stripe");

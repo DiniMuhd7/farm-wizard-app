@@ -137,7 +137,17 @@ exports.outgoingCallTwiML = async (req, res) => {
           await ensureWelcomeReward(callerMatch[1]);
           freeSeconds = await reserveForCall(callerMatch[1], String(req.body?.CallSid || ""));
         } catch (error) {
-          console.error("Unable to apply welcome reward:", error.message);
+          // Never surface this distinction to the caller (they always see
+          // the same plain "not enough credit" message below) — but log it
+          // loudly and distinctly from an ordinary "not eligible" outcome,
+          // since this branch means the reward system itself is broken
+          // (e.g. missing JWT_SECRET) rather than this account simply not
+          // qualifying. See GET /api/v1/rewards/diagnostics for the
+          // operator-facing, per-user version of this same distinction.
+          console.error("Welcome reward configuration failure — reward could not be evaluated:", {
+            userId: callerMatch[1],
+            error: error.message,
+          });
         }
       }
       if (!freeSeconds) {

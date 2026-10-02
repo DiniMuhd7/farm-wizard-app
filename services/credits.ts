@@ -1,10 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "@/config/client";
-import { createPaymentSessionRequest } from "@/services/payments";
+import { createPaymentSessionRequest, type PaymentCurrency } from "@/services/payments";
 
 async function authHeader() {
   const token = await AsyncStorage.getItem("token");
-  if (!token) throw new Error("Sign in to manage your Pay As You Go balance.");
+  if (!token) throw new Error("Sign in to manage your Prepaid balance.");
   return { Authorization: `JWT ${token}` };
 }
 
@@ -22,7 +22,7 @@ export async function getCreditsBalance(): Promise<CreditsBalance> {
   const response = await fetch(`${API_BASE}/api/v1/credits/balance`, {
     headers: await authHeader(),
   });
-  if (!response.ok) throw new Error("Unable to check your Pay As You Go balance right now.");
+  if (!response.ok) throw new Error("Unable to check your Prepaid balance right now.");
   return response.json();
 }
 
@@ -36,12 +36,5 @@ export function hasSufficientCreditsForOneMinute(balance: CreditsBalance): boole
   return balance.balanceCents >= balance.ratePerMinuteCents;
 }
 
-async function createCreditsCheckoutSession(
-  provider: "stripe" | "flutterwave",
-  packId: string,
-): Promise<{ orderId: string; url: string }> {
-  return createPaymentSessionRequest(`/api/v1/payments/${provider}/create-credits-session`, { packId });
-}
-
-export const createCreditsStripeCheckout = (packId: string) => createCreditsCheckoutSession("stripe", packId);
-export const createCreditsFlutterwaveCheckout = (packId: string) => createCreditsCheckoutSession("flutterwave", packId);
+export const createCreditsFlutterwaveCheckout = (packId: string, currency: PaymentCurrency) =>
+  createPaymentSessionRequest("/api/v1/payments/flutterwave/create-credits-session", { packId, currency });

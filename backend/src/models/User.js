@@ -60,7 +60,9 @@ const userSchema = new mongoose.Schema(
     callerIdVerificationExpiresAt: { type: Date, default: null },
     isPremium: { type: Boolean, default: false },
     premiumUntil: Date,
-    // Pay As You Go balance, in whole US cents, for 9tel-to-carrier calls.
+    // Minutes purchased through Airbundle bundles (see controllers/payments).
+    airbundleMinutes: { type: Number, default: 0 },
+    // Prepaid balance, in whole US cents, for 9tel-to-carrier calls.
     // Only ever changed here (a) by creditsOrder fulfillment, once a
     // top-up payment is confirmed (see controllers/payments), and (b) by
     // controllers/voice's outgoing-call status webhook, which deducts the

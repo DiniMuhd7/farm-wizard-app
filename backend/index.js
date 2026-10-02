@@ -17,7 +17,6 @@ const callerid = require("./src/routes/callerid");
 const payments = require("./src/routes/payments");
 const credits = require("./src/routes/credits");
 const rewards = require("./src/routes/rewards");
-const { stripeWebhook } = require("./src/controllers/payments");
 
 const app = express();
 
@@ -35,20 +34,6 @@ const app = express();
 // hop — the platform's own proxy — without trusting arbitrary
 // client-supplied `X-Forwarded-For` values (which `true` would).
 app.set("trust proxy", 1);
-
-// Stripe's webhook signature is computed over the exact raw request bytes —
-// if express.json() (below) parses and re-serializes the body first, the
-// bytes stripe.webhooks.constructEvent() sees will never byte-for-byte
-// match what Stripe actually signed, and verification will always fail.
-// This route MUST be registered before the global express.json() call, with
-// its own express.raw() middleware applying only to this one path — once a
-// body stream is consumed by one parser, no later middleware can re-read
-// the original raw bytes.
-app.post(
-  "/api/v1/payments/stripe/webhook",
-  express.raw({ type: "application/json" }),
-  stripeWebhook
-);
 
 // Middleware
 app.use(express.json());

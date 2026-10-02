@@ -27,7 +27,7 @@ describe("getCreditsBalance", () => {
   it("throws a clear error on a non-OK response", async () => {
     global.fetch = jest.fn(async () => ({ ok: false, json: async () => ({}) })) as any;
 
-    await expect(getCreditsBalance()).rejects.toThrow("Unable to check your Pay As You Go balance right now.");
+    await expect(getCreditsBalance()).rejects.toThrow("Unable to check your Prepaid balance right now.");
   });
 });
 

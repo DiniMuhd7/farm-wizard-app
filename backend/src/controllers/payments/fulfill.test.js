@@ -1,5 +1,5 @@
 /**
- * Credits top-up and Premium purchase fulfillment: both run after a
+ * Credits top-up and Airbundle purchase fulfillment: both run after a
  * payment provider has already confirmed money changed hands, so these
  * tests focus on (a) the balance/entitlement math being correct and (b) a
  * failure here triggering a refund instead of silently keeping the user's
@@ -11,7 +11,7 @@ jest.mock("../numbers", () => ({ purchaseAndAssignNumber: jest.fn() }));
 
 const User = require("../../models/User");
 const { _private } = require("./index");
-const { fulfillCreditsOrder, fulfillPremiumOrder } = _private;
+const { fulfillCreditsOrder, fulfillAirbundleOrder } = _private;
 
 function fakeOrder(overrides) {
   return {
@@ -62,59 +62,60 @@ describe("fulfillCreditsOrder", () => {
   });
 });
 
-describe("fulfillPremiumOrder", () => {
+describe("fulfillAirbundleOrder", () => {
   beforeEach(() => {
     User.findById.mockReset();
     User.findByIdAndUpdate.mockReset();
   });
 
-  it("grants Premium through now + premiumDays for a user who isn't currently Premium", async () => {
+  it("adds the bundle's minutes and grants ad-free access through now + premiumDays", async () => {
     User.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ premiumUntil: null }) });
     User.findByIdAndUpdate.mockResolvedValue({});
-    const order = fakeOrder({ premiumDays: 30 });
+    const order = fakeOrder({ premiumDays: 30, bundleMinutes: 1500 });
     const before = Date.now();
 
-    const result = await fulfillPremiumOrder(order);
+    const result = await fulfillAirbundleOrder(order);
 
     expect(result).toBe(30);
     expect(order.status).toBe("paid");
     expect(order.fulfilledPremiumDays).toBe(30);
     const [userId, update] = User.findByIdAndUpdate.mock.calls[0];
     expect(userId).toBe("user1");
-    expect(update.isPremium).toBe(true);
+    expect(update.$set.isPremium).toBe(true);
+    expect(update.$inc).toEqual({ airbundleMinutes: 1500 });
     const expectedMin = before + 29 * 24 * 60 * 60 * 1000;
-    expect(update.premiumUntil.getTime()).toBeGreaterThan(expectedMin);
+    expect(update.$set.premiumUntil.getTime()).toBeGreaterThan(expectedMin);
   });
 
-  it("extends an already-active Premium period instead of overwriting it with a shorter one", async () => {
+  it("extends an already-active ad-free period instead of overwriting it with a shorter one", async () => {
     const stillActive = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000); // 10 days left
     User.findById.mockReturnValue({ select: jest.fn().mockResolvedValue({ premiumUntil: stillActive }) });
     User.findByIdAndUpdate.mockResolvedValue({});
     const order = fakeOrder({ premiumDays: 30 });
 
-    await fulfillPremiumOrder(order);
+    await fulfillAirbundleOrder(order);
 
     const [, update] = User.findByIdAndUpdate.mock.calls[0];
     // Base is the existing premiumUntil (10 days out), plus 30 more days —
     // not "now + 30", which would discard the 10 days already paid for.
     const expectedUntil = stillActive.getTime() + 30 * 24 * 60 * 60 * 1000;
-    expect(update.premiumUntil.getTime()).toBe(expectedUntil);
+    expect(update.$set.premiumUntil.getTime()).toBe(expectedUntil);
   });
 
   it("is a no-op on webhook redelivery once already fulfilled", async () => {
     const order = fakeOrder({ premiumDays: 30, status: "paid", fulfilledPremiumDays: 30 });
 
-    const result = await fulfillPremiumOrder(order);
+    const result = await fulfillAirbundleOrder(order);
 
     expect(User.findByIdAndUpdate).not.toHaveBeenCalled();
     expect(result).toBe(30);
   });
 
-  it("never falsely reports success: a failure leaves the order unpaid rather than granting Premium", async () => {
+  it("never falsely reports success: a failure leaves the order unpaid rather than granting the bundle", async () => {
     User.findById.mockReturnValue({ select: jest.fn().mockRejectedValue(new Error("db down")) });
     const order = fakeOrder({ premiumDays: 30 });
 
-    const result = await fulfillPremiumOrder(order);
+    const result = await fulfillAirbundleOrder(order);
 
     expect(result).toBeNull();
     expect(order.status).not.toBe("paid");

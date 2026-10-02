@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { CheckCircle2, CircleAlert, Gift, PhoneForwarded } from "lucide-react-native";
-import { CREDIT_PACKS, formatCents } from "@/constants/creditPacks";
-import { createCreditsFlutterwaveCheckout, createCreditsStripeCheckout, getCreditsBalance, type CreditsBalance } from "@/services/credits";
-import { getOrderStatus, toPaymentInitError } from "@/services/payments";
+import CurrencySelector from "@/components/CurrencySelector";
+import { CREDIT_PACKS, formatCents, formatCreditPackPrice } from "@/constants/creditPacks";
+import { createCreditsFlutterwaveCheckout, getCreditsBalance, type CreditsBalance } from "@/services/credits";
+import { toPaymentInitError, waitForPaymentOutcome, type PaymentCurrency } from "@/services/payments";
 import { describeEffectiveAvailability, describeWelcomeReward, type WelcomeRewardStatus } from "@/services/rewards";
 
 interface Props {
@@ -13,15 +14,16 @@ interface Props {
   onVerifyPhone?: () => void;
 }
 
-// Pay As You Go — prepaid balance for calls from 9tel to local mobile
-// carriers (not 9tel-to-9tel, which is Free/Premium — see
-// components/NineTelPlanCards.tsx). The balance shown here is always a
+// Prepaid — prepaid balance for calls from 9tel to local mobile carriers
+// (not 9tel-to-9tel, which is covered by Airbundle — see
+// components/AirbundleCards.tsx). The balance shown here is always a
 // fresh read of the authoritative backend value; nothing is ever deducted
 // client-side (see services/credits.ts).
-export default function PayAsYouGoCard({ welcomeReward, welcomeRewardLoading = false, onVerifyPhone }: Props) {
+export default function PrepaidCard({ welcomeReward, welcomeRewardLoading = false, onVerifyPhone }: Props) {
   const [balance, setBalance] = useState<CreditsBalance | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [buyingPackId, setBuyingPackId] = useState<string | null>(null);
+  const [currency, setCurrency] = useState<PaymentCurrency>("USD");
 
   const loadBalance = () => {
     setLoadError(null);
@@ -34,33 +36,28 @@ export default function PayAsYouGoCard({ welcomeReward, welcomeRewardLoading = f
     loadBalance();
   }, []);
 
-  const buy = async (packId: string, provider: "stripe" | "flutterwave") => {
+  const buy = async (packId: string) => {
     setBuyingPackId(packId);
     try {
-      const { orderId, url } = provider === "stripe"
-        ? await createCreditsStripeCheckout(packId)
-        : await createCreditsFlutterwaveCheckout(packId);
+      const { orderId, url } = await createCreditsFlutterwaveCheckout(packId, currency);
       await WebBrowser.openBrowserAsync(url);
 
-      const deadline = Date.now() + 2 * 60 * 1000;
-      while (Date.now() < deadline) {
-        await new Promise((resolve) => setTimeout(resolve, 3000));
-        const order = await getOrderStatus(orderId).catch(() => null);
-        if (order?.status === "paid") {
-          loadBalance();
-          Alert.alert("Credits added", "Your Pay As You Go balance has been topped up.");
-          return;
-        }
-        if (order?.status === "failed" || order?.status === "refunded") {
-          Alert.alert("Payment didn't complete", "Nothing was charged, or your payment was refunded. You can try again.");
-          return;
-        }
+      const outcome = await waitForPaymentOutcome(orderId);
+      if (outcome === "paid") {
+        loadBalance();
+        Alert.alert("Credits added", "Your Prepaid balance has been topped up.");
+      } else if (outcome === "cancelled") {
+        Alert.alert("Payment cancelled", "Nothing was charged. You can try again anytime.");
+      } else if (outcome === "failed" || outcome === "refunded") {
+        Alert.alert("Payment didn't complete", "Nothing was charged, or your payment was refunded. You can try again.");
+      } else {
+        Alert.alert("Still processing", "We haven't received confirmation of your payment yet. Your credits will appear once it is confirmed.");
       }
     } catch (error) {
       const paymentError = toPaymentInitError(error);
       Alert.alert("Unable to start payment", paymentError.message, [
         { text: "Not now", style: "cancel" },
-        { text: "Retry", onPress: () => buy(packId, provider) },
+        { text: "Retry", onPress: () => buy(packId) },
       ]);
     } finally {
       setBuyingPackId(null);
@@ -120,9 +117,11 @@ export default function PayAsYouGoCard({ welcomeReward, welcomeRewardLoading = f
       <View style={s.noteCard}>
         <CheckCircle2 size={16} color="#5147AF" />
         <Text style={s.copy}>
-          Calls to local mobile numbers are billed from this balance per minute. Secure checkout opens next, and credits appear here only after the backend confirms payment.
+          Calls to local mobile numbers are billed from this balance per minute. Choose USD or NGN, then secure Flutterwave checkout opens. Credits appear here only after the backend confirms payment.
         </Text>
       </View>
+
+      <CurrencySelector value={currency} onChange={setCurrency} disabled={buyingPackId !== null} />
 
       <View style={s.list}>
         {CREDIT_PACKS.map((pack) => (
@@ -133,12 +132,12 @@ export default function PayAsYouGoCard({ welcomeReward, welcomeRewardLoading = f
               <Pressable
                 style={s.packBtn}
                 disabled={buyingPackId !== null}
-                onPress={() => buy(pack.id, "stripe")}
+                onPress={() => buy(pack.id)}
               >
                 {buyingPackId === pack.id ? (
                   <ActivityIndicator color="#FFF" size="small" />
                 ) : (
-                  <Text style={s.packBtnText}>{formatCents(pack.priceUsdCents)}</Text>
+                  <Text style={s.packBtnText}>{formatCreditPackPrice(pack, currency)}</Text>
                 )}
               </Pressable>
             </View>

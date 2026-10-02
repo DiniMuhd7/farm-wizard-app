@@ -1,5 +1,5 @@
 /**
- * Regression tests for the Pay As You Go / welcome-reward precedence at
+ * Regression tests for the Prepaid / welcome-reward precedence at
  * actual dial time (outgoingCallTwiML). These exist because the ordering
  * bug this guards against — a generic "not enough credit" denial reached
  * before an eligible unused welcome reward is ever considered — is only
@@ -135,7 +135,7 @@ describe("voice controller — outgoingCallTwiML welcome-reward precedence", () 
     expect(res.body).toContain("do not have enough credit");
   });
 
-  it("lets a sufficient Pay As You Go balance skip the reward entirely", async () => {
+  it("lets a sufficient Prepaid balance skip the reward entirely", async () => {
     User.findById
       .mockReturnValueOnce(leanUser({ verifiedCallerId: CALLER_ID, phoneNumber: null, isGuest: false }))
       .mockReturnValueOnce(leanUser({ creditsBalanceCents: 100 }));

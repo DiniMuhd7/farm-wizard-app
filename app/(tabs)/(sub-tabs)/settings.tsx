@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Modal, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View, ActivityIndicator } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { CheckCircle2, ChevronLeft, ChevronRight, CreditCard, Globe2, Landmark, Moon, Phone, PhoneCall, Search, ShieldCheck, Smartphone, Volume2, X } from "lucide-react-native";
+import { CheckCircle2, ChevronLeft, ChevronRight, Globe2, Landmark, Moon, Phone, PhoneCall, Search, ShieldCheck, Smartphone, Volume2, X } from "lucide-react-native";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { getMyNumber } from "@/services/numbers";
 import { getCallerIdVerificationStatus, type CallerIdStatus } from "@/services/callerid";
-import { checkNumberAvailability, createFlutterwaveCheckout, createStripeCheckout, getAvailableNumberCountries, getOrderStatus, toPaymentInitError } from "@/services/payments";
+import { checkNumberAvailability, createFlutterwaveCheckout, getAvailableNumberCountries, getOrderStatus, toPaymentInitError, type PaymentCurrency } from "@/services/payments";
+import CurrencySelector from "@/components/CurrencySelector";
 import { useLoginContext } from "@/context/LoginProvider";
 import { useCountryData } from "@/hooks/useCountryData";
 
@@ -43,7 +44,8 @@ export default function Settings() {
   const [checkingAvailability, setCheckingAvailability] = useState(false);
   const [availabilityError, setAvailabilityError] = useState("");
   const [previewNumber, setPreviewNumber] = useState<string | null>(null);
-  const [payingWith, setPayingWith] = useState<"stripe" | "flutterwave" | null>(null);
+  const [paying, setPaying] = useState(false);
+  const [currency, setCurrency] = useState<PaymentCurrency>("USD");
   const [processingMessage, setProcessingMessage] = useState("Processing your payment…");
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -130,7 +132,7 @@ export default function Settings() {
     setStep("country");
     setPreviewNumber(null);
     setAvailabilityError("");
-    setPayingWith(null);
+    setPaying(false);
   };
 
   // Checking availability is free — nothing is purchased here. This used to
@@ -180,6 +182,11 @@ export default function Settings() {
           setMyNumber(order.phoneNumber);
           closeModal();
           Alert.alert("You're all set", `${order.phoneNumber} is now your 9tel number.`);
+        } else if (order.status === "cancelled") {
+          clearInterval(pollRef.current!);
+          setProcessingMessage("");
+          Alert.alert("Payment cancelled", "Nothing was charged. You can try again anytime.");
+          setStep("preview");
         } else if (order.status === "failed") {
           clearInterval(pollRef.current!);
           setProcessingMessage("");
@@ -207,12 +214,10 @@ export default function Settings() {
     }, 3000);
   };
 
-  const payWith = async (provider: "stripe" | "flutterwave") => {
-    setPayingWith(provider);
+  const payWithFlutterwave = async () => {
+    setPaying(true);
     try {
-      const { orderId, url } = provider === "stripe"
-        ? await createStripeCheckout(selectedCountry.value.toUpperCase())
-        : await createFlutterwaveCheckout(selectedCountry.value.toUpperCase());
+      const { orderId, url } = await createFlutterwaveCheckout(selectedCountry.value.toUpperCase(), currency);
 
       setStep("processing");
       setProcessingMessage("Processing your payment…");
@@ -228,11 +233,11 @@ export default function Settings() {
       const paymentError = toPaymentInitError(error);
       Alert.alert("Unable to start payment", paymentError.message, [
         { text: "Not now", style: "cancel" },
-        { text: "Retry", onPress: () => payWith(provider) },
+        { text: "Retry", onPress: () => payWithFlutterwave() },
       ]);
       setStep("preview");
     } finally {
-      setPayingWith(null);
+      setPaying(false);
     }
   };
 
@@ -454,28 +459,19 @@ export default function Settings() {
                   </Text>
                 </View>
 
-                <Text style={s.modalSub}>Choose how to pay</Text>
+                <Text style={s.modalSub}>Choose your payment currency</Text>
 
-                <Pressable style={s.paymentOption} onPress={() => payWith("stripe")} disabled={!!payingWith}>
-                  <View style={[s.paymentIcon, { backgroundColor: "#EDEBFF" }]}>
-                    <CreditCard size={19} color="#5147AF" />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.paymentLabel}>Card (Stripe)</Text>
-                    <Text style={s.paymentDetail}>Visa, Mastercard, and more</Text>
-                  </View>
-                  {payingWith === "stripe" ? <ActivityIndicator color="#5147AF" /> : <ChevronRight size={18} color="#AAA6B7" />}
-                </Pressable>
+                <CurrencySelector value={currency} onChange={setCurrency} disabled={paying} />
 
-                <Pressable style={s.paymentOption} onPress={() => payWith("flutterwave")} disabled={!!payingWith}>
+                <Pressable style={s.paymentOption} onPress={payWithFlutterwave} disabled={paying}>
                   <View style={[s.paymentIcon, { backgroundColor: "#FFF0E0" }]}>
                     <Landmark size={19} color="#E17A2D" />
                   </View>
                   <View style={{ flex: 1 }}>
-                    <Text style={s.paymentLabel}>Flutterwave</Text>
+                    <Text style={s.paymentLabel}>Pay in {currency} with Flutterwave</Text>
                     <Text style={s.paymentDetail}>Cards, bank transfer, mobile money</Text>
                   </View>
-                  {payingWith === "flutterwave" ? <ActivityIndicator color="#E17A2D" /> : <ChevronRight size={18} color="#AAA6B7" />}
+                  {paying ? <ActivityIndicator color="#E17A2D" /> : <ChevronRight size={18} color="#AAA6B7" />}
                 </Pressable>
 
                 <Text

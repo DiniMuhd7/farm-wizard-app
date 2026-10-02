@@ -37,8 +37,8 @@ router.get("/provider-status", providerStatusRateLimit, protect, getProviderStat
 // routes/payments.js and controllers/numbers' purchaseAndAssignNumber,
 // which is not itself exposed as a public route).
 router.get("/available", protect, checkAvailability);
-// Eligibility check for the calling-plan model (Free/Premium 9tel-to-9tel
-// vs. Pay As You Go credits to a carrier) — see services/callPlans.ts.
+// Eligibility check for the calling-plan model (Airbundle 9tel-to-9tel
+// vs. Prepaid credits to a carrier) — see services/callPlans.ts.
 // POST (not GET) so the phone number travels in the body, not a logged
 // query string.
 router.post("/lookup", lookupRateLimit, protect, lookupNumber);

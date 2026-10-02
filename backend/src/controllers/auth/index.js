@@ -10,6 +10,7 @@ const getUserInfo = (user) => ({
   country: user.country,
   language: user.language,
   isPremium: user.isPremium,
+  airbundleMinutes: user.airbundleMinutes || 0,
   status: user.status,
   createdAt: user.createdAt,
   updatedAt: user.updatedAt,

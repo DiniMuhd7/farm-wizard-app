@@ -230,7 +230,7 @@ const E164 = /^\+[1-9]\d{6,14}$/;
 // GET /api/v1/numbers/lookup?phoneNumber=+1555...
 //
 // Lets the app ask, before placing a call, "is this destination another
-// 9tel user (free/premium, in-app) or a local carrier (pay-as-you-go
+// 9tel user (Airbundle, in-app) or a local carrier (prepaid
 // credits)?" without duplicating the ownership lookup that
 // controllers/voice's outgoingCallTwiML already performs server-side at
 // dial time. This is the same `User.findOne({ phoneNumber })` check — kept

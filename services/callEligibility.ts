@@ -16,8 +16,8 @@ function isClientIdentity(destination: string): boolean {
   return destination.startsWith("client:");
 }
 
-// Classifies who a call is going to so the right plan (Free/Premium vs Pay
-// As You Go) can be applied — see resolveCallPlan in types/callPlans.ts.
+// Classifies who a call is going to so the right plan (Airbundle vs
+// Prepaid) can be applied — see resolveCallPlan in types/callPlans.ts.
 //
 // This deliberately fails open to "unknown" rather than guessing, for two
 // reasons documented in the problem this solves:

@@ -3,7 +3,7 @@ import TestRenderer, { act } from "react-test-renderer";
 import { describe, expect, it, jest, beforeEach, afterEach } from "@jest/globals";
 
 // Each mock below stands in for a real dependency the call screen drives
-// its ad-gating / premium-bypass / insufficient-credit phases off of —
+// its plan-gating / insufficient-credit phases and ad placement off of —
 // see app/(screens)/call.tsx's Phase state machine.
 jest.mock("expo-keep-awake", () => ({ useKeepAwake: jest.fn() }));
 
@@ -25,6 +25,10 @@ jest.mock("@/services/credits", () => ({
   hasSufficientCreditsForOneMinute: (balance: any) => balance.balanceCents >= balance.ratePerMinuteCents,
 }));
 
+jest.mock("@/services/rewards", () => ({
+  getWelcomeReward: jest.fn(async () => ({ status: "unavailable" })),
+}));
+
 jest.mock("@/context/LoginProvider", () => ({
   useLoginContext: jest.fn(() => ({ user: { isPremium: false } })),
 }));
@@ -38,10 +42,10 @@ jest.mock("@/services/voice", () => ({
   endActiveVoiceCall: jest.fn(),
 }));
 
-let rewardedAdProps: any = null;
-jest.mock("@/utils/RewardedAdComponent", () => (props: any) => {
-  rewardedAdProps = props;
-  return null;
+jest.mock("@/components/CallInterstitialSlot", () => {
+  const ReactActual = require("react");
+  const { View } = require("react-native");
+  return () => ReactActual.createElement(View, { testID: "call-interstitial-slot" });
 });
 
 import { useLoginContext } from "@/context/LoginProvider";
@@ -62,7 +66,6 @@ describe("CallScreen plan gating", () => {
     // isolated and let Jest exit cleanly.
     jest.useFakeTimers();
     jest.clearAllMocks();
-    rewardedAdProps = null;
     mockRouterBack.mockReset();
     mockRouterReplace.mockReset();
     mockClassifyDestination.mockReset();
@@ -74,32 +77,11 @@ describe("CallScreen plan gating", () => {
     jest.useRealTimers();
   });
 
-  it("gates a Free-plan (non-Premium, 9tel-to-9tel) call behind a rewarded ad before connecting", async () => {
+  it("connects a 9tel-to-9tel call without any ad gate or pre-call screen", async () => {
     mockClassifyDestination.mockResolvedValue({ kind: "9tel" });
     let renderer: any;
     await act(async () => {
       renderer = TestRenderer.create(<CallScreen />);
-    });
-    await flush();
-
-    expect(renderer.root.findAllByProps({ testID: undefined }).length).toBeGreaterThanOrEqual(0);
-    expect(rewardedAdProps).not.toBeNull(); // the ad gate mounted the rewarded ad component
-    expect(renderer.toJSON()).not.toBeNull();
-    act(() => renderer.unmount());
-  });
-
-  it("lets a call proceed to connecting once the rewarded ad reward is earned", async () => {
-    mockClassifyDestination.mockResolvedValue({ kind: "9tel" });
-    let renderer: any;
-    await act(async () => {
-      renderer = TestRenderer.create(<CallScreen />);
-    });
-    await flush();
-    expect(rewardedAdProps).not.toBeNull();
-
-    act(() => {
-      rewardedAdProps.onRewardEarned?.({ amount: 1, type: "coins" });
-      rewardedAdProps.onClose?.();
     });
     await flush();
 
@@ -108,7 +90,7 @@ describe("CallScreen plan gating", () => {
     act(() => renderer.unmount());
   });
 
-  it("blocks the call and offers a retry when the pre-call ad is cancelled/unavailable", async () => {
+  it("shows the interstitial placement directly above the connection-strength section, ahead of the call controls", async () => {
     mockClassifyDestination.mockResolvedValue({ kind: "9tel" });
     let renderer: any;
     await act(async () => {
@@ -116,19 +98,21 @@ describe("CallScreen plan gating", () => {
     });
     await flush();
 
-    // The ad closed (or errored) without a reward ever being earned.
-    act(() => {
-      rewardedAdProps.onClose?.();
-    });
-    await flush();
-
-    const { startVoiceCall } = require("@/services/voice");
-    expect(startVoiceCall).not.toHaveBeenCalled();
-    expect(renderer.root.findAllByProps({}).some(() => true)).toBe(true);
+    const slot = renderer.root.findByProps({ testID: "call-interstitial-slot" });
+    const quality = renderer.root.findAll((node: any) => node.children?.includes?.("Your call is protected by 9tel."))[0];
+    // Siblings under the call page: the slot (via its wrapper) must be
+    // immediately followed by the connection-strength card.
+    const page = slot.parent.parent;
+    const children = page.children.filter((child: any) => typeof child !== "string");
+    const contains = (child: any, target: any) => child === target || child.findAll((node: any) => node === target).length > 0;
+    const slotIndex = children.findIndex((child: any) => contains(child, slot));
+    const qualityIndex = children.findIndex((child: any) => contains(child, quality));
+    expect(slotIndex).toBeGreaterThan(-1);
+    expect(qualityIndex).toBe(slotIndex + 1);
     act(() => renderer.unmount());
   });
 
-  it("bypasses the rewarded-ad gate entirely for a Premium account calling 9tel-to-9tel", async () => {
+  it("keeps the call screen ad-free for an Airbundle account calling 9tel-to-9tel", async () => {
     (useLoginContext as jest.Mock).mockReturnValue({ user: { isPremium: true } });
     mockClassifyDestination.mockResolvedValue({ kind: "9tel" });
     let renderer: any;
@@ -137,13 +121,13 @@ describe("CallScreen plan gating", () => {
     });
     await flush();
 
-    expect(rewardedAdProps).toBeNull();
+    expect(renderer.root.findAllByProps({ testID: "call-interstitial-slot" })).toHaveLength(0);
     const { startVoiceCall } = require("@/services/voice");
     expect(startVoiceCall).toHaveBeenCalledWith("+15551234567");
     act(() => renderer.unmount());
   });
 
-  it("blocks a Pay As You Go call when the credits balance can't cover one billable minute", async () => {
+  it("blocks a Prepaid call when the credits balance can't cover one billable minute", async () => {
     mockClassifyDestination.mockResolvedValue({ kind: "carrier" });
     mockGetCreditsBalance.mockResolvedValue({ balanceCents: 2, currency: "usd", ratePerMinuteCents: 9 });
     let renderer: any;
@@ -154,11 +138,10 @@ describe("CallScreen plan gating", () => {
 
     const { startVoiceCall } = require("@/services/voice");
     expect(startVoiceCall).not.toHaveBeenCalled();
-    expect(rewardedAdProps).toBeNull(); // Pay As You Go never shows a rewarded ad
     act(() => renderer.unmount());
   });
 
-  it("lets a Pay As You Go call proceed when the credits balance is sufficient", async () => {
+  it("lets a Prepaid call proceed when the credits balance is sufficient", async () => {
     mockClassifyDestination.mockResolvedValue({ kind: "carrier" });
     mockGetCreditsBalance.mockResolvedValue({ balanceCents: 500, currency: "usd", ratePerMinuteCents: 9 });
     let renderer: any;
@@ -182,7 +165,6 @@ describe("CallScreen plan gating", () => {
 
     const { startVoiceCall } = require("@/services/voice");
     expect(startVoiceCall).toHaveBeenCalledWith("+15551234567");
-    expect(rewardedAdProps).toBeNull();
     act(() => renderer.unmount());
   });
 });

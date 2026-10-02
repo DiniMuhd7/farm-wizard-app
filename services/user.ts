@@ -4,7 +4,7 @@ export const updateUser = async (
   token: string,
   fullName: string,
   password: string,
-  selectedIndex: string
+  selectedIndex: number
 ) => {
   try {
     const res = await client.patch(

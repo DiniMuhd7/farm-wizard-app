@@ -99,6 +99,58 @@ exports.getWelcomeReward = async (req, res) => {
   }
 };
 
+// GET /api/v1/rewards/diagnostics?userId=<id> — admin only.
+//
+// This exists because the welcome reward can silently fail for a reason
+// that's invisible both to the user (who should only ever see a plain
+// "not enough credit" message, never internals) and to the generic app
+// logs: a missing JWT_SECRET makes identityHash() throw for every single
+// user, which the dial-time code path (controllers/voice) already catches
+// and folds into the same insufficient-credit denial every other
+// ineligible reason produces. Without this endpoint, "configuration
+// failure" and "genuinely ineligible" are indistinguishable from the
+// outside, which is exactly the ambiguity that made this bug hard to
+// diagnose in the first place. Never returns the phone number or its hash.
+exports.getRewardDiagnostics = async (req, res) => {
+  if (req.user?.userType !== "admin") {
+    return res.status(403).json({ message: "Admins only" });
+  }
+  const configured = { jwtSecret: Boolean(process.env.JWT_SECRET) };
+  const userId = String(req.query?.userId || "").trim();
+  if (!userId) {
+    return res.status(200).json({ configured });
+  }
+  try {
+    const user = await User.findById(userId).select("isGuest status verifiedCallerId").lean();
+    if (!user) return res.status(200).json({ configured, user: { exists: false } });
+
+    const eligible = !user.isGuest && user.status !== "inactive" && Boolean(user.verifiedCallerId);
+    let rewardState = "ineligible";
+    if (eligible) {
+      try {
+        const reward = await WelcomeReward.findOne({ user: userId });
+        rewardState = reward ? reward.state : "ungranted";
+      } catch (error) {
+        rewardState = "configuration_failed";
+      }
+    }
+    return res.status(200).json({
+      configured,
+      user: {
+        exists: true,
+        isGuest: Boolean(user.isGuest),
+        status: user.status,
+        hasVerifiedCallerId: Boolean(user.verifiedCallerId),
+        eligible,
+        rewardState,
+      },
+    });
+  } catch (error) {
+    console.error("Unable to load reward diagnostics:", error.message);
+    return res.status(500).json({ message: "Unable to load reward diagnostics right now." });
+  }
+};
+
 exports.WELCOME_SECONDS = WELCOME_SECONDS;
 exports.ensureWelcomeReward = ensureWelcomeReward;
 exports.reserveForCall = reserveForCall;

@@ -33,8 +33,118 @@ const PREMIUM_PRICE_USD_CENTS = Number(process.env.PREMIUM_PRICE_USD_CENTS || 49
 const PREMIUM_PRICE_NGN = Number(process.env.PREMIUM_PRICE_NGN || 2500); // ₦2,500/mo default
 const PREMIUM_PERIOD_DAYS = 30;
 
+function requireEnv(keys, context) {
+  const missing = keys.filter((key) => !process.env[key]);
+  if (missing.length) {
+    const err = new Error(`${context} is not configured: ${missing.join(", ")}`);
+    err.code = "CONFIG_MISSING";
+    err.missing = missing;
+    throw err;
+  }
+}
+
+function validationError(message) {
+  const err = new Error(message);
+  err.status = 400;
+  err.clientCode = "validation_error";
+  return err;
+}
+
+function providerError(message) {
+  const err = new Error(message);
+  err.status = 502;
+  err.clientCode = "provider_error";
+  return err;
+}
+
+function requireCheckoutConfiguration(provider) {
+  if (provider === "stripe") requireEnv(["STRIPE_SECRET_KEY", "PUBLIC_BASE_URL"], "Stripe payments");
+  else requireEnv(["FLW_SECRET_KEY", "PUBLIC_BASE_URL"], "Flutterwave payments");
+  return process.env.PUBLIC_BASE_URL.replace(/\/$/, "");
+}
+
+function buildReturnUrl(baseUrl, status) {
+  return `${baseUrl}/api/v1/payments/return${status ? `?status=${status}` : ""}`;
+}
+
+function sanitizeProviderMessage(message) {
+  if (typeof message !== "string") return null;
+  let sanitized = message.trim().replace(/\s+/g, " ");
+  if (!sanitized) return null;
+  const secrets = [
+    process.env.STRIPE_SECRET_KEY,
+    process.env.STRIPE_WEBHOOK_SECRET,
+    process.env.FLW_SECRET_KEY,
+    process.env.FLW_SECRET_HASH,
+  ].filter(Boolean);
+  for (const secret of secrets) sanitized = sanitized.split(secret).join("[redacted]");
+  if (/Bearer\s+[A-Za-z0-9._-]+/i.test(sanitized)) return null;
+  if (/(?:sk|pk)_(?:live|test)_[A-Za-z0-9]+/i.test(sanitized)) return null;
+  return sanitized;
+}
+
+function extractProviderMessage(error) {
+  const candidates = [
+    error?.response?.data?.message,
+    error?.response?.data?.error,
+    error?.response?.data?.data?.processor_response,
+    error?.raw?.message,
+    error?.message,
+  ];
+  for (const candidate of candidates) {
+    const sanitized = sanitizeProviderMessage(candidate);
+    if (sanitized) return sanitized;
+  }
+  return null;
+}
+
+function isNetworkProviderError(error) {
+  return Boolean(
+    error && !error.response && (
+      error.isAxiosError
+      || error.name === "AbortError"
+      || ["ECONNABORTED", "ECONNRESET", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT"].includes(error.code)
+    )
+  );
+}
+
+function normalizePaymentInitError(error) {
+  if (error?.clientCode) {
+    return {
+      status: error.status || (error.clientCode === "validation_error" ? 400 : 502),
+      code: error.clientCode,
+      message: error.message,
+    };
+  }
+  if (error?.code === "CONFIG_MISSING") {
+    return {
+      status: 503,
+      code: "config_error",
+      message: "Payment setup isn't available right now. Please try again in a few minutes.",
+    };
+  }
+  if (isNetworkProviderError(error)) {
+    return {
+      status: 503,
+      code: "network_error",
+      message: "We couldn't reach the payment provider right now. Please try again.",
+    };
+  }
+  return {
+    status: error?.status || 502,
+    code: "provider_error",
+    message: extractProviderMessage(error) || "That didn't go through. Please try again.",
+  };
+}
+
+function respondToPaymentInitError(res, label, error) {
+  console.error(label, error?.response?.data || error);
+  const normalized = normalizePaymentInitError(error);
+  return res.status(normalized.status).json({ code: normalized.code, message: normalized.message });
+}
+
 function stripeClient() {
-  if (!process.env.STRIPE_SECRET_KEY) throw new Error("Stripe is not configured.");
+  requireEnv(["STRIPE_SECRET_KEY"], "Stripe payments");
   const Stripe = require("stripe");
   return new Stripe(process.env.STRIPE_SECRET_KEY);
 }
@@ -164,10 +274,9 @@ async function fulfillOrder(order) {
 // POST /api/v1/payments/stripe/create-session  { countryCode }
 exports.createStripeSession = async (req, res) => {
   try {
+    const baseUrl = requireCheckoutConfiguration("stripe");
     const countryCode = String(req.body?.countryCode || "").toUpperCase();
-    if (!COUNTRY_CODE.test(countryCode)) {
-      return res.status(400).json({ message: "countryCode must be a 2-letter ISO country code." });
-    }
+    assertValidCountryCode(countryCode);
 
     const stripe = stripeClient();
     const order = await Order.create({
@@ -192,29 +301,30 @@ exports.createStripeSession = async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return?status=success`,
-      cancel_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return?status=cancelled`,
+      success_url: buildReturnUrl(baseUrl, "success"),
+      cancel_url: buildReturnUrl(baseUrl, "cancelled"),
       client_reference_id: order._id.toString(),
       metadata: { orderId: order._id.toString() },
     });
+
+    if (!session?.id || !session?.url) throw providerError("Stripe didn't return a checkout link. Please try again.");
 
     order.providerReference = session.id;
     await order.save();
 
     return res.status(200).json({ orderId: order._id, url: session.url });
   } catch (error) {
-    console.error("Unable to create Stripe session:", error.message);
-    return res.status(503).json({ message: "Unable to start payment right now. Please try again later." });
+    return respondToPaymentInitError(res, "Unable to create Stripe session:", error);
   }
 };
 
+function assertValidCountryCode(countryCode) {
+  if (!COUNTRY_CODE.test(countryCode)) throw validationError("countryCode must be a 2-letter ISO country code.");
+}
+
 function resolveCreditPack(packId) {
   const pack = CREDIT_PACKS[String(packId)];
-  if (!pack) {
-    const err = new Error("Choose a valid credits pack.");
-    err.status = 400;
-    throw err;
-  }
+  if (!pack) throw validationError("Choose a valid credits pack.");
   return pack;
 }
 
@@ -224,6 +334,7 @@ function resolveCreditPack(packId) {
 // a number; the fulfillment branch for kind: "credits" is fulfillCreditsOrder.
 exports.createCreditsStripeSession = async (req, res) => {
   try {
+    const baseUrl = requireCheckoutConfiguration("stripe");
     const pack = resolveCreditPack(req.body?.packId);
     const stripe = stripeClient();
     const order = await Order.create({
@@ -249,19 +360,20 @@ exports.createCreditsStripeSession = async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return?status=success`,
-      cancel_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return?status=cancelled`,
+      success_url: buildReturnUrl(baseUrl, "success"),
+      cancel_url: buildReturnUrl(baseUrl, "cancelled"),
       client_reference_id: order._id.toString(),
       metadata: { orderId: order._id.toString() },
     });
+
+    if (!session?.id || !session?.url) throw providerError("Stripe didn't return a checkout link. Please try again.");
 
     order.providerReference = session.id;
     await order.save();
 
     return res.status(200).json({ orderId: order._id, url: session.url });
   } catch (error) {
-    console.error("Unable to create Stripe credits session:", error.message);
-    return res.status(error.status || 503).json({ message: error.status ? error.message : "Unable to start payment right now. Please try again later." });
+    return respondToPaymentInitError(res, "Unable to create Stripe credits session:", error);
   }
 };
 
@@ -272,6 +384,7 @@ exports.createCreditsStripeSession = async (req, res) => {
 // it, so renewing before the current period lapses doesn't lose days.
 exports.createPremiumStripeSession = async (req, res) => {
   try {
+    const baseUrl = requireCheckoutConfiguration("stripe");
     const stripe = stripeClient();
     const order = await Order.create({
       user: req.user._id,
@@ -296,19 +409,20 @@ exports.createPremiumStripeSession = async (req, res) => {
           quantity: 1,
         },
       ],
-      success_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return?status=success`,
-      cancel_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return?status=cancelled`,
+      success_url: buildReturnUrl(baseUrl, "success"),
+      cancel_url: buildReturnUrl(baseUrl, "cancelled"),
       client_reference_id: order._id.toString(),
       metadata: { orderId: order._id.toString() },
     });
+
+    if (!session?.id || !session?.url) throw providerError("Stripe didn't return a checkout link. Please try again.");
 
     order.providerReference = session.id;
     await order.save();
 
     return res.status(200).json({ orderId: order._id, url: session.url });
   } catch (error) {
-    console.error("Unable to create Stripe premium session:", error.message);
-    return res.status(503).json({ message: "Unable to start payment right now. Please try again later." });
+    return respondToPaymentInitError(res, "Unable to create Stripe premium session:", error);
   }
 };
 
@@ -352,11 +466,9 @@ exports.stripeWebhook = async (req, res) => {
 // POST /api/v1/payments/flutterwave/create-session  { countryCode }
 exports.createFlutterwaveSession = async (req, res) => {
   try {
-    if (!process.env.FLW_SECRET_KEY) throw new Error("Flutterwave is not configured.");
+    const baseUrl = requireCheckoutConfiguration("flutterwave");
     const countryCode = String(req.body?.countryCode || "").toUpperCase();
-    if (!COUNTRY_CODE.test(countryCode)) {
-      return res.status(400).json({ message: "countryCode must be a 2-letter ISO country code." });
-    }
+    assertValidCountryCode(countryCode);
 
     const order = await Order.create({
       user: req.user._id,
@@ -374,7 +486,7 @@ exports.createFlutterwaveSession = async (req, res) => {
         tx_ref: order.providerReference,
         amount: String(NUMBER_PRICE_NGN),
         currency: "NGN",
-        redirect_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return`,
+        redirect_url: buildReturnUrl(baseUrl),
         customer: {
           email: req.user.email || `${req.user._id}@guest.9tel.app`,
           name: req.user.fullName || "9tel user",
@@ -382,17 +494,17 @@ exports.createFlutterwaveSession = async (req, res) => {
         customizations: { title: `9tel phone number (${countryCode})` },
         meta: { orderId: order._id.toString() },
       },
-      { headers: { Authorization: `Bearer ${process.env.FLW_SECRET_KEY}` } }
+      { headers: { Authorization: "Bearer " + process.env.FLW_SECRET_KEY } }
     );
 
-    if (response.data?.status !== "success" || !response.data?.data?.link) {
-      throw new Error("Flutterwave did not return a payment link.");
+    const paymentLink = response.data?.data?.link;
+    if (response.data?.status !== "success" || !paymentLink) {
+      throw providerError(sanitizeProviderMessage(response.data?.message) || "Flutterwave didn't return a checkout link. Please try again.");
     }
 
-    return res.status(200).json({ orderId: order._id, url: response.data.data.link });
+    return res.status(200).json({ orderId: order._id, url: paymentLink });
   } catch (error) {
-    console.error("Unable to create Flutterwave session:", error.response?.data || error.message);
-    return res.status(503).json({ message: "Unable to start payment right now. Please try again later." });
+    return respondToPaymentInitError(res, "Unable to create Flutterwave session:", error);
   }
 };
 
@@ -402,7 +514,7 @@ exports.createFlutterwaveSession = async (req, res) => {
 // provisioning a number.
 exports.createCreditsFlutterwaveSession = async (req, res) => {
   try {
-    if (!process.env.FLW_SECRET_KEY) throw new Error("Flutterwave is not configured.");
+    const baseUrl = requireCheckoutConfiguration("flutterwave");
     const pack = resolveCreditPack(req.body?.packId);
 
     const order = await Order.create({
@@ -422,7 +534,7 @@ exports.createCreditsFlutterwaveSession = async (req, res) => {
         tx_ref: order.providerReference,
         amount: String(pack.priceNgn),
         currency: "NGN",
-        redirect_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return`,
+        redirect_url: buildReturnUrl(baseUrl),
         customer: {
           email: req.user.email || `${req.user._id}@guest.9tel.app`,
           name: req.user.fullName || "9tel user",
@@ -433,14 +545,14 @@ exports.createCreditsFlutterwaveSession = async (req, res) => {
       { headers: { Authorization: "Bearer " + process.env.FLW_SECRET_KEY } }
     );
 
-    if (response.data?.status !== "success" || !response.data?.data?.link) {
-      throw new Error("Flutterwave did not return a payment link.");
+    const paymentLink = response.data?.data?.link;
+    if (response.data?.status !== "success" || !paymentLink) {
+      throw providerError(sanitizeProviderMessage(response.data?.message) || "Flutterwave didn't return a checkout link. Please try again.");
     }
 
-    return res.status(200).json({ orderId: order._id, url: response.data.data.link });
+    return res.status(200).json({ orderId: order._id, url: paymentLink });
   } catch (error) {
-    console.error("Unable to create Flutterwave credits session:", error.response?.data || error.message);
-    return res.status(error.status || 503).json({ message: error.status ? error.message : "Unable to start payment right now. Please try again later." });
+    return respondToPaymentInitError(res, "Unable to create Flutterwave credits session:", error);
   }
 };
 
@@ -450,7 +562,7 @@ exports.createCreditsFlutterwaveSession = async (req, res) => {
 // fulfillment/renewal behavior.
 exports.createPremiumFlutterwaveSession = async (req, res) => {
   try {
-    if (!process.env.FLW_SECRET_KEY) throw new Error("Flutterwave is not configured.");
+    const baseUrl = requireCheckoutConfiguration("flutterwave");
 
     const order = await Order.create({
       user: req.user._id,
@@ -469,7 +581,7 @@ exports.createPremiumFlutterwaveSession = async (req, res) => {
         tx_ref: order.providerReference,
         amount: String(PREMIUM_PRICE_NGN),
         currency: "NGN",
-        redirect_url: `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/payments/return`,
+        redirect_url: buildReturnUrl(baseUrl),
         customer: {
           email: req.user.email || `${req.user._id}@guest.9tel.app`,
           name: req.user.fullName || "9tel user",
@@ -480,14 +592,14 @@ exports.createPremiumFlutterwaveSession = async (req, res) => {
       { headers: { Authorization: "Bearer " + process.env.FLW_SECRET_KEY } }
     );
 
-    if (response.data?.status !== "success" || !response.data?.data?.link) {
-      throw new Error("Flutterwave did not return a payment link.");
+    const paymentLink = response.data?.data?.link;
+    if (response.data?.status !== "success" || !paymentLink) {
+      throw providerError(sanitizeProviderMessage(response.data?.message) || "Flutterwave didn't return a checkout link. Please try again.");
     }
 
-    return res.status(200).json({ orderId: order._id, url: response.data.data.link });
+    return res.status(200).json({ orderId: order._id, url: paymentLink });
   } catch (error) {
-    console.error("Unable to create Flutterwave premium session:", error.response?.data || error.message);
-    return res.status(503).json({ message: "Unable to start payment right now. Please try again later." });
+    return respondToPaymentInitError(res, "Unable to create Flutterwave premium session:", error);
   }
 };
 

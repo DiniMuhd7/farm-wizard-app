@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE } from "@/config/client";
+import { createPaymentSessionRequest } from "@/services/payments";
 
 async function authHeader() {
   const token = await AsyncStorage.getItem("token");
@@ -39,14 +40,7 @@ async function createCreditsCheckoutSession(
   provider: "stripe" | "flutterwave",
   packId: string,
 ): Promise<{ orderId: string; url: string }> {
-  const response = await fetch(`${API_BASE}/api/v1/payments/${provider}/create-credits-session`, {
-    method: "POST",
-    headers: { ...(await authHeader()), "Content-Type": "application/json" },
-    body: JSON.stringify({ packId }),
-  });
-  const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data?.message || "Unable to start payment right now.");
-  return data;
+  return createPaymentSessionRequest(`/api/v1/payments/${provider}/create-credits-session`, { packId });
 }
 
 export const createCreditsStripeCheckout = (packId: string) => createCreditsCheckoutSession("stripe", packId);

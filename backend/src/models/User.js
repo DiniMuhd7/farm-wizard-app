@@ -40,6 +40,15 @@ const userSchema = new mongoose.Schema(
     // number this system owns; this is a number they already had before
     // ever using 9tel) — see controllers/callerid.
     verifiedCallerId: { type: String, unique: true, sparse: true },
+    // Explicit, backend-persisted state machine for the caller-ID
+    // verification flow — distinct from `verifiedCallerId` itself so the
+    // UI/API can tell "never attempted" apart from "verification call in
+    // progress" without relying on presentation-only inference from a null
+    // value. Only controllers/callerid ever changes this.
+    //   unverified -> pending (startVerification) -> verified (Twilio's
+    //   success callback) -> back to unverified (a failed/declined
+    //   callback, or starting over with a new number).
+    callerIdStatus: { type: String, enum: ["unverified", "pending", "verified"], default: "unverified" },
     isPremium: { type: Boolean, default: false },
     premiumUntil: Date,
     // Pay As You Go balance, in whole US cents, for 9tel-to-carrier calls.

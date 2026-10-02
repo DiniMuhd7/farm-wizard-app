@@ -143,13 +143,17 @@ const OTPInput = ({ onSubmit, email }) => {
                         accessibilityLabel={`Verification code digit ${index + 1}`}
                         style={[styles.input, digit && styles.inputFilled]}
                         keyboardType="number-pad"
-                        maxLength={1}
+                        inputMode="numeric"
+                        autoComplete={index === 0 ? "one-time-code" : "off"}
+                        importantForAutofill={index === 0 ? "yes" : "no"}
+                        maxLength={OTP_LENGTH}
                         value={digit}
                         onChangeText={text => handleChange(text, index)}
                         onKeyPress={e => handleKeyPress(e, index)}
                         onFocus={handlePasteFromClipboard}
                         selectionColor="#5147AF"
                         textContentType={index === 0 ? "oneTimeCode" : undefined}
+                        returnKeyType={index === OTP_LENGTH - 1 ? "done" : "next"}
                     />
                 ))}
             </View>

@@ -69,6 +69,13 @@ exports.startVerification = async (req, res) => {
       statusCallback: callbackUrl,
     });
 
+    // Persisted the moment Twilio accepts the request, not just held in
+    // app state — see the User model's callerIdStatus comment. A number
+    // that's never actually confirmed (Twilio never calls back, the call
+    // goes unanswered, etc.) stays "pending" rather than ever being treated
+    // as verified; only verificationCallback below can advance it further.
+    await User.findByIdAndUpdate(req.user._id, { callerIdStatus: "pending" });
+
     return res.status(200).json({
       phoneNumber,
       validationCode: validationRequest.validationCode,
@@ -95,8 +102,13 @@ exports.startVerification = async (req, res) => {
 // no other way to know the outcome synchronously, since confirmation only
 // arrives later via Twilio's own asynchronous callback below.
 exports.getVerificationStatus = async (req, res) => {
-  const user = await User.findById(req.user._id).select("verifiedCallerId");
-  return res.status(200).json({ verifiedCallerId: user?.verifiedCallerId || null });
+  const user = await User.findById(req.user._id).select("verifiedCallerId callerIdStatus");
+  return res.status(200).json({
+    verifiedCallerId: user?.verifiedCallerId || null,
+    // Defensive fallback for any row written before this field existed —
+    // never report "verified" without an actual verifiedCallerId to back it.
+    callerIdStatus: user?.callerIdStatus || (user?.verifiedCallerId ? "verified" : "unverified"),
+  });
 };
 
 // POST /api/v1/callerid/callback — Twilio hits this once the verification
@@ -118,7 +130,7 @@ exports.verificationCallback = async (req, res) => {
 
   if (userId && phoneNumber && status === "success") {
     try {
-      await User.findByIdAndUpdate(userId, { verifiedCallerId: phoneNumber });
+      await User.findByIdAndUpdate(userId, { verifiedCallerId: phoneNumber, callerIdStatus: "verified" });
       // Verified phone = the identity the one-time welcome reward is tied
       // to. Failure here must not fail the verification itself; the reward
       // is also (re)evaluated lazily at call time.
@@ -137,6 +149,17 @@ exports.verificationCallback = async (req, res) => {
       hasPhoneNumber: Boolean(phoneNumber),
       status,
     });
+    // A failed/cancelled/no-answer outcome must not leave the account
+    // stuck showing "pending" forever — fall back to the persisted
+    // "unverified" state (never "verified": only a real success above ever
+    // sets that) so the person can see it clearly and retry.
+    if (userId) {
+      try {
+        await User.findByIdAndUpdate(userId, { callerIdStatus: "unverified" });
+      } catch (error) {
+        console.error("Unable to reset caller ID status after a failed verification:", error.message);
+      }
+    }
   }
   return res.status(200).type("text/plain").send("OK");
 };

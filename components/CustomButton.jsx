@@ -7,8 +7,11 @@ const CustomButton = ({
     containerStyles,
     textStyles,
     isLoading,
+    disabled = false,
     // bgColor = 'buttonColor'
 }) => {
+    const isDisabled = isLoading || disabled;
+
     return (
         // <View className="bg-black/20 opacity-90 flex flex-row justify-center items-center mt-3 p-2 rounded-lg">
         <View className="mt-3 rounded-lg overflow-hidden">
@@ -25,7 +28,7 @@ const CustomButton = ({
                 <TouchableOpacity
                     onPress={handlePress}
                     activeOpacity={0.7}
-                    className={`bg-buttonColor rounded-xl min-h-[52px] flex flex-row justify-center items-center shadow-lg shadow-black/50 ${containerStyles} ${isLoading ? "opacity-50" : ""
+                    className={`bg-buttonColor rounded-xl min-h-[52px] flex flex-row justify-center items-center shadow-lg shadow-black/50 ${containerStyles} ${isDisabled ? "opacity-50" : ""
                         }`}
                     // style={{ borderWidth: 1, borderColor: 'rgba(255, 255, 255, 0.2)' }}
                     style={{
@@ -33,8 +36,9 @@ const CustomButton = ({
                         // borderColor: 'rgba(255, 255, 255, 0.2)',
                         // backgroundColor: 'rgba(255, 255, 255, 0.15)',
                     }}
-
-                    disabled={isLoading}
+                    accessibilityRole="button"
+                    accessibilityState={{ disabled: isDisabled, busy: isLoading }}
+                    disabled={isDisabled}
                 >
                     <Text className={`text-white font-primary text-[22px] ${textStyles}`}>
                         {title}

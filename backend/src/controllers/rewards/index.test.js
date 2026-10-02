@@ -69,4 +69,73 @@ describe("rewards controller", () => {
     WelcomeReward.findOneAndUpdate.mockResolvedValue(null);
     expect(await rewards.settleForCall("u1", "CA9", { connected: true, durationSeconds: 30 })).toBeNull();
   });
+
+  describe("getRewardDiagnostics", () => {
+    const mockRes = () => ({
+      statusCode: undefined,
+      body: undefined,
+      status(code) {
+        this.statusCode = code;
+        return this;
+      },
+      json(payload) {
+        this.body = payload;
+        return this;
+      },
+    });
+
+    it("refuses non-admins", async () => {
+      const res = mockRes();
+      await rewards.getRewardDiagnostics({ user: { userType: "user" }, query: {} }, res);
+      expect(res.statusCode).toBe(403);
+    });
+
+    it("reports configuration status alone when no userId is given", async () => {
+      process.env.JWT_SECRET = "test-secret";
+      const res = mockRes();
+      await rewards.getRewardDiagnostics({ user: { userType: "admin" }, query: {} }, res);
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual({ configured: { jwtSecret: true } });
+    });
+
+    it("distinguishes ineligible, ungranted, reserved, and consumed per-user states", async () => {
+      const res1 = mockRes();
+      User.findById.mockReturnValueOnce(leanUser({ isGuest: true, status: "active", verifiedCallerId: "+1" }));
+      await rewards.getRewardDiagnostics({ user: { userType: "admin" }, query: { userId: "u1" } }, res1);
+      expect(res1.body.user).toMatchObject({ eligible: false, rewardState: "ineligible" });
+
+      const res2 = mockRes();
+      User.findById.mockReturnValueOnce(leanUser({ isGuest: false, status: "active", verifiedCallerId: "+1" }));
+      WelcomeReward.findOne.mockResolvedValueOnce(null);
+      await rewards.getRewardDiagnostics({ user: { userType: "admin" }, query: { userId: "u2" } }, res2);
+      expect(res2.body.user).toMatchObject({ eligible: true, rewardState: "ungranted" });
+
+      const res3 = mockRes();
+      User.findById.mockReturnValueOnce(leanUser({ isGuest: false, status: "active", verifiedCallerId: "+1" }));
+      WelcomeReward.findOne.mockResolvedValueOnce({ state: "reserved" });
+      await rewards.getRewardDiagnostics({ user: { userType: "admin" }, query: { userId: "u3" } }, res3);
+      expect(res3.body.user).toMatchObject({ eligible: true, rewardState: "reserved" });
+
+      const res4 = mockRes();
+      User.findById.mockReturnValueOnce(leanUser({ isGuest: false, status: "active", verifiedCallerId: "+1" }));
+      WelcomeReward.findOne.mockResolvedValueOnce({ state: "redeemed" });
+      await rewards.getRewardDiagnostics({ user: { userType: "admin" }, query: { userId: "u4" } }, res4);
+      expect(res4.body.user).toMatchObject({ eligible: true, rewardState: "redeemed" });
+    });
+
+    it("reports a configuration failure distinctly from a genuinely ineligible account", async () => {
+      const res = mockRes();
+      User.findById.mockReturnValueOnce(leanUser({ isGuest: false, status: "active", verifiedCallerId: "+1" }));
+      WelcomeReward.findOne.mockRejectedValueOnce(new Error("Mongo connection lost"));
+      await rewards.getRewardDiagnostics({ user: { userType: "admin" }, query: { userId: "u5" } }, res);
+      expect(res.body.user).toMatchObject({ eligible: true, rewardState: "configuration_failed" });
+    });
+
+    it("reports a non-existent user without leaking anything else", async () => {
+      const res = mockRes();
+      User.findById.mockReturnValueOnce(leanUser(null));
+      await rewards.getRewardDiagnostics({ user: { userType: "admin" }, query: { userId: "ghost" } }, res);
+      expect(res.body.user).toEqual({ exists: false });
+    });
+  });
 });

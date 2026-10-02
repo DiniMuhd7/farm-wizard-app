@@ -6,7 +6,7 @@ import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import { getMyNumber } from "@/services/numbers";
 import { getVerifiedCallerId } from "@/services/callerid";
-import { checkNumberAvailability, createFlutterwaveCheckout, createStripeCheckout, getAvailableNumberCountries, getOrderStatus } from "@/services/payments";
+import { checkNumberAvailability, createFlutterwaveCheckout, createStripeCheckout, getAvailableNumberCountries, getOrderStatus, toPaymentInitError } from "@/services/payments";
 import { useLoginContext } from "@/context/LoginProvider";
 import { useCountryData } from "@/hooks/useCountryData";
 
@@ -216,7 +216,11 @@ export default function Settings() {
       await WebBrowser.openBrowserAsync(url);
       pollForFulfillment(orderId);
     } catch (error) {
-      Alert.alert("Unable to start payment", (error as Error).message);
+      const paymentError = toPaymentInitError(error);
+      Alert.alert("Unable to start payment", paymentError.message, [
+        { text: "Not now", style: "cancel" },
+        { text: "Retry", onPress: () => payWith(provider) },
+      ]);
       setStep("preview");
     } finally {
       setPayingWith(null);

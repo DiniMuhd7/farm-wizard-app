@@ -7,7 +7,7 @@
     "icon": "./assets/icon.png",
     "scheme": "myapp",
     "userInterfaceStyle": "automatic",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.grow.farmwizard",
@@ -32,6 +32,7 @@
       "googleServicesFile": "./google-services.json",
       "permissions": [
         "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA",
         "android.permission.POST_NOTIFICATIONS",
         "android.permission.BLUETOOTH_CONNECT"
       ]
@@ -43,6 +44,14 @@
     },
     "plugins": [
       "expo-router",
+      "./plugins/withAndroidX",
+      [
+        "react-native-twilio-video-webrtc",
+        {
+          "cameraPermission": "9tel uses your camera for video calls.",
+          "microphonePermission": "9tel uses your microphone for video calls."
+        }
+      ],
       [
         "react-native-twilio-video-webrtc",
         {

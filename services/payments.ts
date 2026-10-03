@@ -172,6 +172,28 @@ export async function checkNumberAvailability(countryCode: string): Promise<Avai
 export type PaymentCurrency = "USD" | "NGN";
 export const PAYMENT_CURRENCIES: PaymentCurrency[] = ["USD", "NGN"];
 
+// The backend is authoritative for NGN prices because it calculates them
+// from the cached USD/NGN rate at checkout. Call this before presenting an
+// NGN amount; the backend returns fixed fallback prices if FX is unavailable.
+export type PaymentPrices = {
+  rate: number | null;
+  ngn: {
+    airbundles: Record<string, number>;
+    creditPacks: Record<string, number>;
+    number: number;
+  };
+};
+
+export async function getPaymentPrices(): Promise<PaymentPrices> {
+  const response = await fetch(`${API_BASE}/api/v1/payments/prices`);
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data || typeof data.ngn?.number !== "number" ||
+      typeof data.ngn?.airbundles !== "object" || typeof data.ngn?.creditPacks !== "object") {
+    throw new Error("Unable to load current NGN prices.");
+  }
+  return data as PaymentPrices;
+}
+
 export const createFlutterwaveCheckout = (countryCode: string, currency: PaymentCurrency) =>
   createPaymentSessionRequest("/api/v1/payments/flutterwave/create-session", { countryCode, currency });
 

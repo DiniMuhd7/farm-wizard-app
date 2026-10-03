@@ -142,3 +142,42 @@ describe("numbers controller — Twilio configuration", () => {
     });
   });
 });
+
+describe("numbers controller — 30-day access", () => {
+  beforeEach(() => {
+    jest.resetModules();
+    process.env = { ...ORIGINAL_ENV, TWILIO_ACCOUNT_SID: "AC_test", TWILIO_AUTH_TOKEN: "token_test" };
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it("offers an expired number for Flutterwave renewal instead of treating it as permanently provisioned", async () => {
+    const User = require("../../models/User");
+    User.findById = jest.fn(() => ({
+      select: jest.fn().mockResolvedValue({ phoneNumber: "+15555550123", phoneNumberExpiresAt: new Date(Date.now() - 1) }),
+    }));
+    const { checkAvailability } = require("./index");
+    const res = mockRes();
+
+    await checkAvailability({ query: { countryCode: "US" }, user: { _id: "u1" } }, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({ available: true, renewal: true, phoneNumber: "+15555550123", countryCode: "US" });
+    expect(mockAvailabilityList).not.toHaveBeenCalled();
+  });
+
+  it("does not return an expired number as active account access", async () => {
+    const User = require("../../models/User");
+    User.findById = jest.fn(() => ({
+      select: jest.fn().mockResolvedValue({ phoneNumber: "+15555550123", phoneNumberExpiresAt: new Date(Date.now() - 1) }),
+    }));
+    const { getMyNumber } = require("./index");
+    const res = mockRes();
+
+    await getMyNumber({ user: { _id: "u1" } }, res);
+
+    expect(res.body).toEqual({ phoneNumber: null });
+  });
+});

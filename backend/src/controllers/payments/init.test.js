@@ -337,3 +337,37 @@ describe("payments controller — checkout session init", () => {
     });
   });
 });
+
+describe("payments controller — current NGN prices", () => {
+  beforeEach(() => {
+    jest.resetModules();
+    process.env = {
+      ...ORIGINAL_ENV,
+      FX_RATE_URL: "https://fx.test/latest/USD",
+    };
+    mockAxiosGet.mockReset();
+  });
+
+  afterAll(() => {
+    process.env = ORIGINAL_ENV;
+  });
+
+  it("returns the same FX-derived NGN amounts that checkout will charge", async () => {
+    mockAxiosGet.mockResolvedValue({ data: { rates: { NGN: 1501.2 } } });
+    const { getPrices } = require("./index");
+    const res = mockRes();
+
+    await getPrices({}, res);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toEqual({
+      rate: 1501.2,
+      ngn: {
+        airbundles: { "500": 12000, "1500": 30010, "2500": 45030, "3500": 60040, "5000": 82560 },
+        creditPacks: { "500": 7510, "1000": 15020, "2500": 37530, "5000": 75060, "10000": 150120 },
+        number: 7510,
+      },
+    });
+    expect(mockAxiosGet).toHaveBeenCalledTimes(1);
+  });
+});

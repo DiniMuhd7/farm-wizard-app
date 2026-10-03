@@ -35,6 +35,8 @@ const userSchema = new mongoose.Schema(
     // The user's assigned 9tel number (E.164). Populated by
     // POST /api/v1/numbers/provision. Unset until they claim one.
     phoneNumber: { type: String, unique: true, sparse: true },
+    // Number access is a paid 30-day entitlement, renewed through Flutterwave.
+    phoneNumberExpiresAt: { type: Date, default: null },
     // The user's own real phone number, used as their outbound caller ID
     // once verified. Distinct from phoneNumber above (that's a Twilio
     // number this system owns; this is a number they already had before

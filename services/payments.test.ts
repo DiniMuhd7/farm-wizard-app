@@ -4,7 +4,7 @@ jest.mock("@react-native-async-storage/async-storage", () => ({
   getItem: jest.fn(async () => "test-token"),
 }));
 
-import { AvailableCountriesError, getAvailableNumberCountries, waitForPaymentOutcome } from "./payments";
+import { AvailableCountriesError, getAvailableNumberCountries, getPaymentPrices, waitForPaymentOutcome } from "./payments";
 
 const originalFetch = global.fetch;
 
@@ -167,5 +167,27 @@ describe("waitForPaymentOutcome", () => {
   it("reports pending (not failed) when the deadline passes without a terminal status", async () => {
     respondWith("pending");
     await expect(waitForPaymentOutcome("order1", 20, 5)).resolves.toBe("pending");
+  });
+});
+
+
+describe("getPaymentPrices", () => {
+  afterEach(() => { global.fetch = originalFetch; });
+
+  it("returns backend-authoritative FX-derived NGN prices", async () => {
+    global.fetch = jest.fn(async () => ({
+      ok: true,
+      json: async () => ({ rate: 1500, ngn: { airbundles: { "500": 12000 }, creditPacks: { "500": 7500 }, number: 7500 } }),
+    })) as any;
+
+    await expect(getPaymentPrices()).resolves.toEqual({
+      rate: 1500,
+      ngn: { airbundles: { "500": 12000 }, creditPacks: { "500": 7500 }, number: 7500 },
+    });
+  });
+
+  it("rejects malformed price responses instead of showing a guessed NGN amount", async () => {
+    global.fetch = jest.fn(async () => ({ ok: true, json: async () => ({ ngn: {} }) })) as any;
+    await expect(getPaymentPrices()).rejects.toThrow("Unable to load current NGN prices.");
   });
 });

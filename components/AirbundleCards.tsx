@@ -1,10 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
 import { Check, ShieldCheck, Sparkles } from "lucide-react-native";
 import CurrencySelector from "@/components/CurrencySelector";
 import { AIRBUNDLES, formatAirbundleMinutes, formatAirbundlePrice, type AirbundleId } from "@/constants/airbundles";
-import { createAirbundleFlutterwaveCheckout, toPaymentInitError, waitForPaymentOutcome, type PaymentCurrency } from "@/services/payments";
+import { createAirbundleFlutterwaveCheckout, getPaymentPrices, toPaymentInitError, waitForPaymentOutcome, type PaymentCurrency, type PaymentPrices } from "@/services/payments";
 
 interface Props {
   // Whether the account currently has an active Airbundle (the account's
@@ -16,12 +16,23 @@ interface Props {
 export default function AirbundleCards({ isActive, onPurchased }: Props) {
   const [buying, setBuying] = useState(false);
   const [currency, setCurrency] = useState<PaymentCurrency>("USD");
+  const [prices, setPrices] = useState<PaymentPrices | null>(null);
   const [selectedId, setSelectedId] = useState<AirbundleId>(
     () => AIRBUNDLES.find((bundle) => bundle.popular)?.id ?? AIRBUNDLES[0].id,
   );
   const selected = AIRBUNDLES.find((bundle) => bundle.id === selectedId) ?? AIRBUNDLES[0];
+  const priceFor = (bundle: typeof selected) => currency === "NGN" && prices?.ngn.airbundles[bundle.id] != null
+    ? `₦${prices.ngn.airbundles[bundle.id].toLocaleString("en-US")}`
+    : currency === "NGN" ? "Loading current price…" : formatAirbundlePrice(bundle, currency);
+
+  useEffect(() => {
+    getPaymentPrices().then(setPrices).catch(() => undefined);
+  }, []);
+
+  const ngnPriceReady = currency !== "NGN" || prices?.ngn.airbundles[selected.id] != null;
 
   const buy = async () => {
+    if (!ngnPriceReady) return;
     setBuying(true);
     try {
       const { orderId, url } = await createAirbundleFlutterwaveCheckout(selected.id, currency);
@@ -30,7 +41,7 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
       const outcome = await waitForPaymentOutcome(orderId);
       if (outcome === "paid") {
         onPurchased();
-        Alert.alert("Airbundle added", `${formatAirbundleMinutes(selected)} are now on your account, and your 9tel-to-9tel calls are ad-free.`);
+        Alert.alert("Airbundle added", `${formatAirbundleMinutes(selected)} are now on your account for calls to 9tel users and local mobile carriers.`);
       } else if (outcome === "cancelled") {
         Alert.alert("Payment cancelled", "Nothing was charged. You can try again anytime.");
       } else if (outcome === "failed" || outcome === "refunded") {
@@ -52,7 +63,7 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
         <View style={[s.iconWrap, s.iconWrapAirbundle]}><ShieldCheck size={18} color="#FFF" /></View>
         <View style={s.headerCopy}>
           <Text style={s.cardTitle}>Airbundle</Text>
-          <Text style={s.cardSubtitle}>Minute bundles for ad-free calling between 9tel users.</Text>
+          <Text style={s.cardSubtitle}>Minute bundles for calls to 9tel users and local mobile carriers.</Text>
         </View>
         {isActive && <View style={s.currentBadge}><Check size={11} color="#FFF" /></View>}
       </View>
@@ -63,7 +74,7 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
         </Text>
         <Text style={[s.statusCopy, isActive ? s.statusCopyActive : s.statusCopyMuted]}>
           {isActive
-            ? "Your account already has ad-free 9tel-to-9tel calling. Buy another bundle anytime to add more minutes."
+            ? "Your account has active Airbundle minutes. Buy another bundle anytime to add more minutes."
             : "Pick a bundle, choose USD or NGN, and pay securely with Flutterwave. Minutes are added only after the payment is confirmed."}
         </Text>
       </View>
@@ -75,7 +86,7 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
             <Pressable
               key={bundle.id}
               accessibilityRole="radio"
-              accessibilityLabel={`${formatAirbundleMinutes(bundle)}, ${formatAirbundlePrice(bundle, currency)}`}
+              accessibilityLabel={`${formatAirbundleMinutes(bundle)}, ${priceFor(bundle)}`}
               accessibilityState={{ selected: active, disabled: buying }}
               disabled={buying}
               onPress={() => setSelectedId(bundle.id)}
@@ -85,7 +96,7 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
                 <Text style={s.bundleMinutes}>{formatAirbundleMinutes(bundle)}</Text>
                 {bundle.popular && <Text style={s.bundlePopular}>Most popular</Text>}
               </View>
-              <Text style={s.bundlePrice}>{formatAirbundlePrice(bundle, currency)}</Text>
+              <Text style={s.bundlePrice}>{priceFor(bundle)}</Text>
             </Pressable>
           );
         })}
@@ -94,7 +105,7 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
       <View style={s.featureList}>
         <View style={s.featureRow}>
           <Sparkles size={15} color="#5147AF" />
-          <Text style={s.featureText}>Applies to calls where both sides are 9tel users.</Text>
+          <Text style={s.featureText}>Use your included minutes for 9tel and local mobile-carrier calls.</Text>
         </View>
         <View style={s.featureRow}>
           <Sparkles size={15} color="#5147AF" />
@@ -105,11 +116,11 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
       <CurrencySelector value={currency} onChange={setCurrency} disabled={buying} />
 
       <View style={s.upgradeRow}>
-        <Pressable style={s.upgradeBtn} disabled={buying} onPress={buy} accessibilityRole="button">
+        <Pressable style={s.upgradeBtn} disabled={buying || !ngnPriceReady} onPress={buy} accessibilityRole="button">
           {buying ? (
             <ActivityIndicator color="#FFF" size="small" />
           ) : (
-            <Text style={s.upgradeText}>Pay {formatAirbundlePrice(selected, currency)} with Flutterwave</Text>
+            <Text style={s.upgradeText}>Pay {priceFor(selected)} with Flutterwave</Text>
           )}
         </Pressable>
       </View>

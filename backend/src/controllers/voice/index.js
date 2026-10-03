@@ -90,8 +90,11 @@ exports.outgoingCallTwiML = async (req, res) => {
   if (callerMatch) {
     const User = require("../../models/User");
     caller = await User.findById(callerMatch[1])
-      .select("verifiedCallerId callerIdStatus callerIdVerificationMethod phoneNumber isGuest")
+      .select("verifiedCallerId callerIdStatus callerIdVerificationMethod phoneNumber phoneNumberExpiresAt isGuest")
       .lean();
+  }
+  if (caller?.phoneNumber && (!caller.phoneNumberExpiresAt || new Date(caller.phoneNumberExpiresAt).getTime() <= Date.now())) {
+    return res.type("text/xml").send("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response><Say>Your 9tel number access has expired. Renew it to place calls.</Say></Response>");
   }
   const callerIdentity = resolveCallerIdentity(caller);
   if (!callerIdentity) {
@@ -148,12 +151,22 @@ exports.outgoingCallTwiML = async (req, res) => {
   //   3. otherwise the call is refused
   // Calls to the caller's own numbers never qualify for the reward.
   let timeLimitAttr = "";
+  let billing = "credits";
+  let ratePerMinuteCents = 0;
   if (callerMatch && E164.test(destination)) {
-    const { RATE_PER_MINUTE_CENTS } = require("../credits");
+    const { carrierRateCents } = require("../../utils/voiceRates");
     const User = require("../../models/User");
-    const account = await User.findById(callerMatch[1]).select("creditsBalanceCents").lean();
-    const hasCredits = (account?.creditsBalanceCents || 0) >= RATE_PER_MINUTE_CENTS;
-    if (!hasCredits) {
+    const account = await User.findById(callerMatch[1]).select("creditsBalanceCents airbundleMinutes premiumUntil").lean();
+    const airbundleActive = (account?.airbundleMinutes || 0) > 0 &&
+      account?.premiumUntil && new Date(account.premiumUntil).getTime() > Date.now();
+    ratePerMinuteCents = await carrierRateCents(destination, callerId);
+    const hasCredits = (account?.creditsBalanceCents || 0) >= ratePerMinuteCents;
+    if (airbundleActive) {
+      billing = "airbundle";
+      // Twilio enforces the remaining bundle duration; settlement below then
+      // deducts its reported whole minutes from the same bundle.
+      timeLimitAttr = ` timeLimit="${Math.max(60, Math.floor(account.airbundleMinutes) * 60)}"`;
+    } else if (!hasCredits) {
       const ownNumber = destination === caller?.verifiedCallerId || destination === caller?.phoneNumber;
       let freeSeconds = 0;
       if (!ownNumber && !caller?.isGuest) {
@@ -181,8 +194,9 @@ exports.outgoingCallTwiML = async (req, res) => {
       timeLimitAttr = ` timeLimit="${freeSeconds}"`;
     }
   }
+  const billedAction = escapedXml(`${baseUrl}?billing=${billing}&rateCents=${billing === "credits" ? ratePerMinuteCents || 0 : 0}`);
   const noun = destination.startsWith("client:") ? `<Client>${escapedXml(destination.slice(7))}</Client>` : `<Number>${escapedXml(destination)}</Number>`;
-  return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerId}"${timeLimitAttr} action="${action}" method="POST">${noun}</Dial></Response>`);
+  return res.type("text/xml").send(`<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${callerId}"${timeLimitAttr} action="${billedAction}" method="POST">${noun}</Dial></Response>`);
 };
 
 // Twilio hits this whenever someone dials a 9tel number on the PSTN. `To` is
@@ -313,7 +327,37 @@ exports.outgoingDialStatus = async (req, res) => {
     // credits balance using Twilio's own reported duration.
     const to = String(req.body?.To || "").trim();
     const appToAppSuccess = Boolean(fallbackTo) && dialCallStatus === "completed";
-    if (!appToAppSuccess && E164.test(to)) {
+    if (appToAppSuccess) {
+      const { debitForCompletedCall } = require("../credits");
+      const { appToAppRateCents } = require("../../utils/voiceRates");
+      await debitForCompletedCall(match[1], Number(req.body?.DialCallDuration) || 0, appToAppRateCents(), String(req.body?.DialCallSid || req.body?.CallSid || "") || undefined);
+      return respondToDialOutcome(res, dialCallStatus);
+    }
+    if (E164.test(to)) {
+      const billedWithAirbundle = req.query?.billing === "airbundle";
+      if (dialCallStatus === "completed" && billedWithAirbundle) {
+        const duration = Number(req.body?.DialCallDuration) || 0;
+        const minutes = Math.max(1, Math.ceil(duration / 60));
+        // Claim the provider call id before decrementing, so a webhook
+        // redelivery cannot consume the same bundle minutes twice. The
+        // compare-and-set also keeps a late callback from taking the balance
+        // below zero after Twilio's time limit.
+        const callSid = String(req.body?.DialCallSid || req.body?.CallSid || "");
+        if (callSid) {
+          try {
+            await require("../../models/BilledCall").create({ callSid, user: match[1], costCents: 0 });
+          } catch (error) {
+            if (error?.code === 11000) return respondToDialOutcome(res, dialCallStatus);
+            throw error;
+          }
+        }
+        const debited = await User.findOneAndUpdate(
+          { _id: match[1], airbundleMinutes: { $gte: minutes } },
+          { $inc: { airbundleMinutes: -minutes } },
+        );
+        if (!debited && callSid) await require("../../models/BilledCall").deleteOne({ callSid }).catch(() => {});
+        return respondToDialOutcome(res, dialCallStatus);
+      }
       // Settle the welcome-reward reservation (if this call held one)
       // before billing: a redeemed free minute is never also debited, and
       // a call that never connected hands the reward back.
@@ -330,8 +374,10 @@ exports.outgoingDialStatus = async (req, res) => {
       // A redeemed free minute (or a redelivered event for one) is never
       // also debited; Twilio's timeLimit already capped it at 60 seconds.
       if (dialCallStatus === "completed" && rewardOutcome !== "redeemed" && rewardOutcome !== "replayed") {
-        const { debitForCompletedCall } = require("../credits");
-        await debitForCompletedCall(match[1], Number(req.body?.DialCallDuration) || 0, String(req.body?.DialCallSid || req.body?.CallSid || "") || undefined);
+        const { debitForCompletedCall, RATE_PER_MINUTE_CENTS } = require("../credits");
+        const requestedRateCents = Number(req.query?.rateCents);
+        const rateCents = Number.isSafeInteger(requestedRateCents) && requestedRateCents > 0 ? requestedRateCents : RATE_PER_MINUTE_CENTS;
+        await debitForCompletedCall(match[1], Number(req.body?.DialCallDuration) || 0, rateCents, String(req.body?.DialCallSid || req.body?.CallSid || "") || undefined);
       }
     }
   }

@@ -1,10 +1,10 @@
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
-import { BarChart3, Clock3, UserRound } from "lucide-react-native";
+import { Clock3, MessageCircle, UserRound } from "lucide-react-native";
 
 const TAB_META: Record<string, { label: string; icon: any }> = {
   recent: { label: "Recent", icon: Clock3 },
-  stats: { label: "Stats", icon: BarChart3 },
+  messages: { label: "Messages", icon: MessageCircle },
   profile: { label: "Profile", icon: UserRound },
 };
 

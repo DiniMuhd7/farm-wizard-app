@@ -215,10 +215,13 @@ exports.purchaseAndAssignNumber = async (userId, countryCode) => {
   }
 
   const voiceUrl = `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/voice/incoming`;
+  const messagingUrl = `${process.env.PUBLIC_BASE_URL.replace(/\/$/, "")}/api/v1/messages/incoming`;
   const purchased = await client.incomingPhoneNumbers.create({
     phoneNumber: available[0].phoneNumber,
     voiceUrl,
     voiceMethod: "POST",
+    smsUrl: messagingUrl,
+    smsMethod: "POST",
     friendlyName: `9tel user ${userId}`,
   });
 

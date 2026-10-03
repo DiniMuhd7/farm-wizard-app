@@ -41,6 +41,25 @@ function createVoiceAccessToken(identity) {
   return `${signingInput}.${signature}`;
 }
 
+// Video uses the same Twilio API key and access-token signing mechanism as
+// Voice, but a Video grant authorizes joining one named Room instead of a
+// TwiML application. The room is supplied only after server-side validation.
+function createVideoAccessToken(identity, room) {
+  requireVoiceConfiguration();
+  const now = Math.floor(Date.now() / 1000);
+  const header = base64Url(JSON.stringify({ typ: "JWT", alg: "HS256", cty: "twilio-fpa;v=1" }));
+  const payload = base64Url(JSON.stringify({
+    jti: `${process.env.TWILIO_API_KEY_SID}-${crypto.randomUUID()}`,
+    iss: process.env.TWILIO_API_KEY_SID,
+    sub: process.env.TWILIO_ACCOUNT_SID,
+    iat: now,
+    exp: now + TOKEN_TTL_SECONDS,
+    grants: { identity, video: { room } },
+  }));
+  const signingInput = `${header}.${payload}`;
+  return `${signingInput}.${crypto.createHmac("sha256", process.env.TWILIO_API_KEY_SECRET).update(signingInput).digest("base64url")}`;
+}
+
 function isAllowedDestination(destination) {
   if (CLIENT_IDENTITY.test(destination)) return true;
   if (!E164.test(destination)) return false;
@@ -55,6 +74,27 @@ exports.issueToken = (req, res) => {
   } catch (error) {
     console.error("Unable to issue Twilio Voice token", error.message);
     return res.status(503).json({ message: "Voice calling is not configured" });
+  }
+};
+
+// Room names are generated server-side. This keeps arbitrary users from
+// joining a guessed room and gives both participants the same stable room for
+// an app-to-app video call.
+exports.issueVideoToken = async (req, res) => {
+  const destination = String(req.body?.to || "").trim();
+  if (!E164.test(destination)) return res.status(400).json({ message: "Enter a valid 9tel number for a video call." });
+  try {
+    const User = require("../../models/User");
+    const recipient = await User.findOne({ phoneNumber: destination, status: { $ne: "inactive" } }).select("_id").lean();
+    if (!recipient) return res.status(404).json({ message: "Video calls are available only between active 9tel users." });
+    const callerId = req.user._id.toString();
+    const recipientId = recipient._id.toString();
+    if (callerId === recipientId) return res.status(400).json({ message: "Choose another 9tel user for a video call." });
+    const room = `9tel-${[callerId, recipientId].sort().join("-")}`;
+    return res.status(200).json({ token: createVideoAccessToken(`user-${callerId}`, room), room, expiresIn: TOKEN_TTL_SECONDS });
+  } catch (error) {
+    console.error("Unable to issue Twilio Video token", error.message);
+    return res.status(503).json({ message: "Video calling is not configured." });
   }
 };
 

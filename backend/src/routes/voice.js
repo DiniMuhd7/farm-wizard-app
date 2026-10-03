@@ -3,6 +3,7 @@ const { rateLimit } = require("express-rate-limit");
 const { protect } = require("../middleware/auth");
 const {
   issueToken,
+  issueVideoToken,
   outgoingCallTwiML,
   incomingCallTwiML,
   outgoingDialStatus,
@@ -23,6 +24,7 @@ const outgoingCallRateLimit = rateLimit({
     ),
 });
 router.get("/token", protect, issueToken);
+router.post("/video/token", protect, issueVideoToken);
 // These routes are called by Twilio (the TwiML App, phone number config, and
 // each <Dial>'s own `action` callback), not by the mobile client —
 // authenticated instead by Twilio's request signature (see

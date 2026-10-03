@@ -3,7 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import { Camera, CameraOff, Mic, MicOff, PhoneOff } from "lucide-react-native";
-import { TwilioVideo, TwilioVideoLocalView, TwilioVideoParticipantView } from "@twilio/video-react-native-sdk";
+import { TwilioVideo, TwilioVideoLocalView, TwilioVideoParticipantView } from "react-native-twilio-video-webrtc";
 import { startVideoCall } from "@/services/video";
 
 export default function VideoCallScreen() {

@@ -44,7 +44,7 @@
     "plugins": [
       "expo-router",
       [
-        "@twilio/video-react-native-sdk",
+        "react-native-twilio-video-webrtc",
         {
           "cameraPermission": "9tel uses your camera for video calls.",
           "microphonePermission": "9tel uses your microphone for video calls."

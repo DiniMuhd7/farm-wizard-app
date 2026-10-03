@@ -72,9 +72,35 @@ describe("payments controller — checkout session init", () => {
     expect(res.body).toEqual({ orderId: order._id, url: "https://flutterwave.test/pay" });
     expect(mockAxiosPost).toHaveBeenCalledWith(
       "https://api.flutterwave.com/v3/payments",
-      expect.objectContaining({ redirect_url: "https://api.9tel.test/api/v1/payments/return" }),
-      expect.any(Object)
+      expect.objectContaining({
+        redirect_url: "https://api.9tel.test/api/v1/payments/return",
+        configurations: { session_duration: 30, max_retry_attempt: 5 },
+      }),
+      expect.objectContaining({
+        timeout: 15000,
+        headers: expect.objectContaining({
+          Authorization: "Bearer flw_test_123",
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        }),
+      })
     );
+  });
+
+  it("rejects a non-HTTPS checkout URL returned by Flutterwave", async () => {
+    const Order = require("../../models/Order");
+    Order.create.mockResolvedValue(fakeOrder({ providerReference: "9tel-ref-unsafe-link" }));
+    mockAxiosPost.mockResolvedValue({ data: { status: "success", data: { link: "myapp://not-a-checkout" } } });
+    const { createFlutterwaveSession } = require("./index");
+
+    const res = mockRes();
+    await createFlutterwaveSession({ body: { countryCode: "NG", currency: "NGN" }, user: { _id: "user1" } }, res);
+
+    expect(res.statusCode).toBe(502);
+    expect(res.body).toEqual({
+      code: "provider_error",
+      message: "Flutterwave didn't return a checkout link. Please try again.",
+    });
   });
 
   it("creates a Flutterwave credits checkout session for a valid pack", async () => {

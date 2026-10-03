@@ -26,7 +26,7 @@ const TabsLayout = () => {
       >
         <Tabs.Screen name="home" options={{ headerShown: false, tabBarButton: () => null }} />
         <Tabs.Screen name="recent" options={{ headerShown: false }} />
-        <Tabs.Screen name="stats" options={{ headerShown: false }} />
+        <Tabs.Screen name="messages" options={{ headerShown: false }} />
         <Tabs.Screen name="profile" options={{ headerShown: false }} />
         <Tabs.Screen
           name="(sub-tabs)/settings"

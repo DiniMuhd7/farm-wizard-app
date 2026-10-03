@@ -46,7 +46,9 @@ router.post("/flutterwave/create-airbundle-session", checkoutRateLimit, protect,
 // the controller's own comment), not a body signature, so it has no
 // special body-parsing requirement.
 router.post("/flutterwave/webhook", statusRateLimit, flutterwaveWebhook);
-router.get("/prices", statusRateLimit, protect, getPrices);
+// Current prices are public product information; keeping this endpoint unauthenticated
+// lets the app quote NGN prices before a guest session refresh completes.
+router.get("/prices", statusRateLimit, getPrices);
 router.get("/orders/:id", statusRateLimit, protect, getOrderStatus);
 router.get("/return", statusRateLimit, paymentReturnPage);
 

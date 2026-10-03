@@ -13,7 +13,7 @@ jest.mock("../../utils/twilioSignature", () => ({
   twilioRequestIsValid: jest.fn(() => true),
   escapedXml: (value) => String(value).replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[c])),
 }));
-jest.mock("../../models/User", () => ({ findById: jest.fn(), findOne: jest.fn() }));
+jest.mock("../../models/User", () => ({ findById: jest.fn(), findOne: jest.fn(), findOneAndUpdate: jest.fn() }));
 jest.mock("../../models/Call", () => ({ create: jest.fn() }));
 jest.mock("../credits", () => ({ RATE_PER_MINUTE_CENTS: 9, debitForCompletedCall: jest.fn() }));
 jest.mock("../rewards", () => ({
@@ -67,6 +67,7 @@ describe("voice controller — outgoingCallTwiML welcome-reward precedence", () 
     rewards = require("../rewards");
     User.findById.mockReset();
     User.findOne.mockReset();
+    User.findOneAndUpdate.mockReset();
     credits.debitForCompletedCall.mockReset();
     rewards.ensureWelcomeReward.mockReset();
     rewards.reserveForCall.mockReset();
@@ -133,6 +134,19 @@ describe("voice controller — outgoingCallTwiML welcome-reward precedence", () 
     await outgoingCallTwiML(req(), res);
 
     expect(res.body).toContain("do not have enough credit");
+  });
+
+  it("uses active Airbundle minutes for a local carrier call before Prepaid credits", async () => {
+    User.findById
+      .mockReturnValueOnce(leanUser({ verifiedCallerId: CALLER_ID, phoneNumber: null, isGuest: false }))
+      .mockReturnValueOnce(leanUser({ creditsBalanceCents: 0, airbundleMinutes: 25, premiumUntil: new Date(Date.now() + 60_000) }));
+
+    const res = mockRes();
+    await outgoingCallTwiML(req(), res);
+
+    expect(res.body).toContain('timeLimit="1500"');
+    expect(res.body).toContain('billing=airbundle');
+    expect(res.body).not.toContain("do not have enough credit");
   });
 
   it("lets a sufficient Prepaid balance skip the reward entirely", async () => {
@@ -332,6 +346,6 @@ describe("voice controller — caller identity and reward settlement", () => {
   it("bills purchased credit with the provider duration when no reward was held", async () => {
     rewards.settleForCall.mockResolvedValue(null);
     await voice.outgoingDialStatus(statusReq({ DialCallDuration: "125" }), res());
-    expect(credits.debitForCompletedCall).toHaveBeenCalledWith(USER_ID, 125, "CAparent");
+    expect(credits.debitForCompletedCall).toHaveBeenCalledWith(USER_ID, 125, 9, "CAparent");
   });
 });

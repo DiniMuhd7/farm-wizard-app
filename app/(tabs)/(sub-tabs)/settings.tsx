@@ -463,7 +463,7 @@ export default function Settings() {
                   <Text style={s.previewNumber}>{previewNumber}</Text>
                   <Text style={s.previewNote}>
                     This exact number isn't reserved until payment completes — in the rare case someone else takes it
-                    first, you'll automatically get the next available {selectedCountry.label} number instead.
+                    first, you'll automatically get the next available {selectedCountry.label} number instead. Your 9tel number access lasts 30 days after payment; renew with Flutterwave to keep it active.
                   </Text>
                 </View>
 

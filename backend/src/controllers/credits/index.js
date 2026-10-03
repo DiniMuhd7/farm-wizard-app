@@ -6,7 +6,7 @@ const User = require("../../models/User");
 // controllers/voice's outgoingDialStatus, the only other place this balance
 // is ever decremented. Configurable per deployment; the mobile app never
 // hard-codes this number, it only displays whatever the backend reports.
-const RATE_PER_MINUTE_CENTS = Number(process.env.CREDITS_RATE_PER_MINUTE_CENTS || 9);
+const RATE_PER_MINUTE_CENTS = Number(process.env.CARRIER_RATE_PER_MINUTE_CENTS || process.env.CREDITS_RATE_PER_MINUTE_CENTS || 9);
 const CURRENCY = "usd";
 
 // GET /api/v1/credits/balance
@@ -28,10 +28,15 @@ exports.CURRENCY = CURRENCY;
 // concurrent deliveries) debits at most once. If the debit itself fails the
 // claim is released so a later redelivery can bill the call. Without a sid
 // there is nothing to dedupe on, so the debit is applied as before.
-exports.debitForCompletedCall = async (userId, durationSeconds, callSid) => {
+exports.debitForCompletedCall = async (userId, durationSeconds, ratePerMinuteCents = RATE_PER_MINUTE_CENTS, callSid) => {
+  // Backward-compatible third argument: existing callers passed callSid here.
+  if (typeof ratePerMinuteCents === "string" && callSid === undefined) {
+    callSid = ratePerMinuteCents;
+    ratePerMinuteCents = RATE_PER_MINUTE_CENTS;
+  }
   if (!durationSeconds) return;
   const minutes = Math.max(1, Math.ceil(Number(durationSeconds) / 60) || 0);
-  const costCents = minutes * RATE_PER_MINUTE_CENTS;
+  const costCents = minutes * ratePerMinuteCents;
   const BilledCall = callSid ? require("../../models/BilledCall") : null;
   try {
     if (BilledCall) {

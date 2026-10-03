@@ -29,6 +29,8 @@ const CREDIT_PACKS = {
   "500": { creditsCents: 500, priceUsdCents: 500, priceNgn: 3000 },
   "1000": { creditsCents: 1000, priceUsdCents: 1000, priceNgn: 6000 },
   "2500": { creditsCents: 2500, priceUsdCents: 2500, priceNgn: 15000 },
+  "5000": { creditsCents: 5000, priceUsdCents: 5000, priceNgn: 75000 },
+  "10000": { creditsCents: 10000, priceUsdCents: 10000, priceNgn: 150000 },
 };
 
 // Airbundle — selectable minute bundles for ad-free 9tel-to-9tel calling.

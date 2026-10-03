@@ -185,9 +185,7 @@ export type PaymentPrices = {
 };
 
 export async function getPaymentPrices(): Promise<PaymentPrices> {
-  const response = await fetch(`${API_BASE}/api/v1/payments/prices`, {
-    headers: await authHeader(),
-  });
+  const response = await fetch(`${API_BASE}/api/v1/payments/prices`);
   const data = await response.json().catch(() => null);
   if (!response.ok || !data || typeof data.ngn?.number !== "number" ||
       typeof data.ngn?.airbundles !== "object" || typeof data.ngn?.creditPacks !== "object") {

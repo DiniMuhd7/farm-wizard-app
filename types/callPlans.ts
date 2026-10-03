@@ -1,6 +1,6 @@
 // Shared types for the two calling-plan tiers:
-//   Airbundle — 9tel-to-9tel, a purchased minute bundle (ad-free)
-//   Prepaid   — 9tel-to-local-carrier, billed from a prepaid credits balance
+//   Airbundle — a purchased minute bundle for 9tel and carrier calls
+//   Prepaid   — additional carrier-call balance once bundle minutes are used
 //
 // This file covers which *tier* applies to a given call based on who
 // you're calling and your account's Airbundle status.
@@ -28,8 +28,8 @@ export type CallEligibility = {
 
 // The plan that actually governs a specific outgoing call, resolved from
 // (destination kind) x (account Airbundle status):
-//   - destination "9tel", Airbundle active -> "airbundle"
-//   - destination "carrier"                -> "prepaid" (credits-billed)
+//   - any known destination, Airbundle active -> "airbundle"
+//   - destination "carrier" without Airbundle -> "prepaid" (credits-billed)
 //   - anything else                        -> "unmetered" (fail open; no
 //     credit check, since we can't tell which rule applies — see
 //     classifyDestination's fail-open comment). This also covers a 9tel
@@ -40,7 +40,7 @@ export type CallEligibility = {
 export type ResolvedCallPlan = "airbundle" | "prepaid" | "unmetered";
 
 export function resolveCallPlan(destinationKind: CallDestinationKind, isAirbundle: boolean): ResolvedCallPlan {
-  if (destinationKind === "9tel" && isAirbundle) return "airbundle";
+  if ((destinationKind === "9tel" || destinationKind === "carrier") && isAirbundle) return "airbundle";
   if (destinationKind === "carrier") return "prepaid";
   return "unmetered";
 }

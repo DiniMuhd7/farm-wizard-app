@@ -10,9 +10,9 @@ describe("resolveCallPlan", () => {
     expect(resolveCallPlan("9tel", false)).toBe("unmetered");
   });
 
-  it("applies Prepaid to a carrier destination regardless of Airbundle status", () => {
+  it("uses Airbundle minutes for carrier calls before falling back to Prepaid", () => {
+    expect(resolveCallPlan("carrier", true)).toBe("airbundle");
     expect(resolveCallPlan("carrier", false)).toBe("prepaid");
-    expect(resolveCallPlan("carrier", true)).toBe("prepaid");
   });
 
   it("fails open to unmetered when the destination can't be classified", () => {

@@ -1,25 +1,18 @@
 import { useEffect, useState } from "react";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import * as WebBrowser from "expo-web-browser";
-import { CheckCircle2, CircleAlert, Gift, PhoneForwarded } from "lucide-react-native";
+import { CheckCircle2, CircleAlert, PhoneForwarded } from "lucide-react-native";
 import CurrencySelector from "@/components/CurrencySelector";
 import { CREDIT_PACKS, formatCents, formatCreditPackPrice } from "@/constants/creditPacks";
 import { createCreditsFlutterwaveCheckout, getCreditsBalance, type CreditsBalance } from "@/services/credits";
 import { getPaymentPrices, toPaymentInitError, waitForPaymentOutcome, type PaymentCurrency, type PaymentPrices } from "@/services/payments";
-import { describeEffectiveAvailability, describeWelcomeReward, type WelcomeRewardStatus } from "@/services/rewards";
 
-interface Props {
-  welcomeReward?: WelcomeRewardStatus | null;
-  welcomeRewardLoading?: boolean;
-  onVerifyPhone?: () => void;
-}
-
-// Prepaid — prepaid balance for calls from 9tel to local mobile carriers
-// (not 9tel-to-9tel, which is covered by Airbundle — see
+// Prepaid — an additional balance for calls from 9tel to local mobile carriers
+// after Airbundle minutes have been used — see
 // components/AirbundleCards.tsx). The balance shown here is always a
 // fresh read of the authoritative backend value; nothing is ever deducted
 // client-side (see services/credits.ts).
-export default function PrepaidCard({ welcomeReward, welcomeRewardLoading = false, onVerifyPhone }: Props) {
+export default function PrepaidCard() {
   const [balance, setBalance] = useState<CreditsBalance | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [buyingPackId, setBuyingPackId] = useState<string | null>(null);
@@ -71,33 +64,8 @@ export default function PrepaidCard({ welcomeReward, welcomeRewardLoading = fals
     }
   };
 
-  const rewardDisplay = describeWelcomeReward(welcomeReward);
-  const hasPurchasedCredit = balance ? balance.balanceCents >= balance.ratePerMinuteCents : false;
-
   return (
     <View>
-      <View style={s.rewardCard}>
-        <View style={s.rewardHeader}>
-          <View style={s.rewardIconWrap}><Gift size={17} color="#5147AF" /></View>
-          <View style={s.rewardCopy}>
-            <Text style={s.rewardTitle}>Introductory carrier-call reward</Text>
-            {welcomeRewardLoading ? (
-              <Text style={s.rewardBody}>Checking your current reward…</Text>
-            ) : (
-              <>
-                <Text style={s.rewardValue}>{rewardDisplay.title}</Text>
-                <Text style={s.rewardBody}>{rewardDisplay.detail}</Text>
-              </>
-            )}
-          </View>
-        </View>
-        {welcomeReward?.status === "verify_phone" && (
-          <Pressable onPress={onVerifyPhone} style={s.rewardButton}>
-            <Text style={s.rewardButtonText}>Verify phone to unlock</Text>
-          </Pressable>
-        )}
-      </View>
-
       <View style={s.balanceCard}>
         <View style={s.iconWrap}><PhoneForwarded size={16} color="#5147AF" /></View>
         <View style={s.balanceCopy}>
@@ -106,9 +74,6 @@ export default function PrepaidCard({ welcomeReward, welcomeRewardLoading = fals
             <>
               <Text style={s.balanceValue}>{formatCents(balance.balanceCents)}</Text>
               <Text style={s.balanceMeta}>Current billed rate: {formatCents(balance.ratePerMinuteCents)} per minute</Text>
-              {!welcomeRewardLoading && (
-                <Text style={s.availability}>{describeEffectiveAvailability(welcomeReward, hasPurchasedCredit)}</Text>
-              )}
             </>
           ) : loadError ? (
             <Pressable onPress={loadBalance} style={s.inlineRetry}>
@@ -156,16 +121,6 @@ export default function PrepaidCard({ welcomeReward, welcomeRewardLoading = fals
 }
 
 const s = StyleSheet.create({
-  rewardCard: { backgroundColor: "#FFF", borderRadius: 20, padding: 16, borderWidth: 1.5, borderColor: "#EDEBF6" },
-  rewardHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12 },
-  rewardIconWrap: { width: 36, height: 36, borderRadius: 14, backgroundColor: "#EEECFF", alignItems: "center", justifyContent: "center" },
-  rewardCopy: { flex: 1 },
-  rewardTitle: { color: "#211B59", fontFamily: "Poppins-SemiBold", fontSize: 14 },
-  rewardValue: { color: "#5147AF", fontFamily: "Poppins-SemiBold", fontSize: 13, marginTop: 4 },
-  availability: { color: "#211B59", fontFamily: "Poppins-Medium", fontSize: 11, marginTop: 6 },
-  rewardBody: { color: "#5D5A76", fontFamily: "Poppins-Regular", fontSize: 11, lineHeight: 17, marginTop: 4 },
-  rewardButton: { marginTop: 14, minHeight: 46, borderRadius: 14, backgroundColor: "#F3F1FF", alignItems: "center", justifyContent: "center" },
-  rewardButtonText: { color: "#5147AF", fontFamily: "Poppins-SemiBold", fontSize: 12 },
   balanceCard: { backgroundColor: "#FFF", borderRadius: 18, padding: 16, borderWidth: 1.5, borderColor: "#EDEBF6", flexDirection: "row", alignItems: "center", gap: 12, marginTop: 14 },
   iconWrap: { width: 34, height: 34, borderRadius: 12, backgroundColor: "#EEECFF", alignItems: "center", justifyContent: "center" },
   balanceCopy: { flex: 1 },
@@ -177,8 +132,8 @@ const s = StyleSheet.create({
   balanceLoading: { alignSelf: "flex-start", marginTop: 4 },
   noteCard: { flexDirection: "row", gap: 10, backgroundColor: "#F3F1FF", borderRadius: 18, padding: 14, marginTop: 14 },
   copy: { flex: 1, color: "#514D66", fontFamily: "Poppins-Regular", fontSize: 10.5, lineHeight: 16 },
-  list: { flexDirection: "row", gap: 10, marginTop: 14 },
-  packCard: { flex: 1, backgroundColor: "#FFF", borderRadius: 16, borderWidth: 1.5, borderColor: "#EDEBF6", padding: 12, alignItems: "center" },
+  list: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 14 },
+  packCard: { width: "31.5%", backgroundColor: "#FFF", borderRadius: 16, borderWidth: 1.5, borderColor: "#EDEBF6", padding: 12, alignItems: "center" },
   packAmount: { color: "#302C4C", fontFamily: "Poppins-SemiBold", fontSize: 12, textAlign: "center" },
   packMeta: { color: "#85829B", fontFamily: "Poppins-Regular", fontSize: 10, lineHeight: 15, textAlign: "center", marginTop: 6 },
   packActions: { marginTop: 10, width: "100%" },

@@ -41,7 +41,7 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
       const outcome = await waitForPaymentOutcome(orderId);
       if (outcome === "paid") {
         onPurchased();
-        Alert.alert("Airbundle added", `${formatAirbundleMinutes(selected)} are now on your account, and your 9tel-to-9tel calls are ad-free.`);
+        Alert.alert("Airbundle added", `${formatAirbundleMinutes(selected)} are now on your account for calls to 9tel users and local mobile carriers.`);
       } else if (outcome === "cancelled") {
         Alert.alert("Payment cancelled", "Nothing was charged. You can try again anytime.");
       } else if (outcome === "failed" || outcome === "refunded") {
@@ -63,7 +63,7 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
         <View style={[s.iconWrap, s.iconWrapAirbundle]}><ShieldCheck size={18} color="#FFF" /></View>
         <View style={s.headerCopy}>
           <Text style={s.cardTitle}>Airbundle</Text>
-          <Text style={s.cardSubtitle}>Minute bundles for ad-free calling between 9tel users.</Text>
+          <Text style={s.cardSubtitle}>Minute bundles for calls to 9tel users and local mobile carriers.</Text>
         </View>
         {isActive && <View style={s.currentBadge}><Check size={11} color="#FFF" /></View>}
       </View>
@@ -74,7 +74,7 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
         </Text>
         <Text style={[s.statusCopy, isActive ? s.statusCopyActive : s.statusCopyMuted]}>
           {isActive
-            ? "Your account already has ad-free 9tel-to-9tel calling. Buy another bundle anytime to add more minutes."
+            ? "Your account has active Airbundle minutes. Buy another bundle anytime to add more minutes."
             : "Pick a bundle, choose USD or NGN, and pay securely with Flutterwave. Minutes are added only after the payment is confirmed."}
         </Text>
       </View>
@@ -105,7 +105,7 @@ export default function AirbundleCards({ isActive, onPurchased }: Props) {
       <View style={s.featureList}>
         <View style={s.featureRow}>
           <Sparkles size={15} color="#5147AF" />
-          <Text style={s.featureText}>Applies to calls where both sides are 9tel users.</Text>
+          <Text style={s.featureText}>Use your included minutes for 9tel and local mobile-carrier calls.</Text>
         </View>
         <View style={s.featureRow}>
           <Sparkles size={15} color="#5147AF" />

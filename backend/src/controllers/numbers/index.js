@@ -39,6 +39,7 @@ function twilioClient() {
 }
 
 const COUNTRY_CODE = /^[A-Z]{2}$/;
+const NUMBER_ACCESS_PERIOD_MS = 30 * 24 * 60 * 60 * 1000;
 const AVAILABLE_COUNTRY_CACHE_MS = 5 * 60 * 1000;
 const availableCountryCache = new Map();
 
@@ -63,9 +64,12 @@ exports.checkAvailability = async (req, res) => {
     const countryCode = String(req.query?.countryCode || "").toUpperCase();
     assertValidCountryCode(countryCode);
 
-    const existing = await User.findById(req.user._id).select("phoneNumber");
-    if (existing?.phoneNumber) {
+    const existing = await User.findById(req.user._id).select("phoneNumber phoneNumberExpiresAt");
+    if (existing?.phoneNumber && existing.phoneNumberExpiresAt?.getTime() > Date.now()) {
       return res.status(200).json({ alreadyProvisioned: true, phoneNumber: existing.phoneNumber });
+    }
+    if (existing?.phoneNumber) {
+      return res.status(200).json({ available: true, renewal: true, phoneNumber: existing.phoneNumber, countryCode });
     }
 
     const client = twilioClient();
@@ -195,8 +199,14 @@ exports.purchaseAndAssignNumber = async (userId, countryCode) => {
   // URL below) — not in twilioClient() itself, see the comment there.
   requireEnv(["PUBLIC_BASE_URL"]);
 
-  const existing = await User.findById(userId).select("phoneNumber");
-  if (existing?.phoneNumber) return existing.phoneNumber; // already has one — don't double-buy
+  const existing = await User.findById(userId).select("phoneNumber phoneNumberExpiresAt");
+  const expiresAt = new Date(Date.now() + NUMBER_ACCESS_PERIOD_MS);
+  if (existing?.phoneNumber) {
+    if (!existing.phoneNumberExpiresAt || existing.phoneNumberExpiresAt.getTime() <= Date.now()) {
+      await User.findByIdAndUpdate(userId, { phoneNumberExpiresAt: expiresAt });
+    }
+    return existing.phoneNumber;
+  }
 
   const client = twilioClient();
   const available = await client.availablePhoneNumbers(countryCode).local.list({ voiceEnabled: true, limit: 1 });
@@ -216,13 +226,14 @@ exports.purchaseAndAssignNumber = async (userId, countryCode) => {
   // concurrent assignment rather than silently double-assigning. The
   // now-purchased number would need manual cleanup in the Twilio console
   // in that rare case — there's no distributed lock here.
-  const user = await User.findByIdAndUpdate(userId, { phoneNumber: purchased.phoneNumber }, { new: true }).select("phoneNumber");
+  const user = await User.findByIdAndUpdate(userId, { phoneNumber: purchased.phoneNumber, phoneNumberExpiresAt: expiresAt }, { new: true }).select("phoneNumber");
   return user.phoneNumber;
 };
 
 exports.getMyNumber = async (req, res) => {
-  const user = await User.findById(req.user._id).select("phoneNumber");
-  return res.status(200).json({ phoneNumber: user?.phoneNumber || null });
+  const user = await User.findById(req.user._id).select("phoneNumber phoneNumberExpiresAt");
+  const active = user?.phoneNumber && user.phoneNumberExpiresAt?.getTime() > Date.now();
+  return res.status(200).json({ phoneNumber: active ? user.phoneNumber : null });
 };
 
 const E164 = /^\+[1-9]\d{6,14}$/;

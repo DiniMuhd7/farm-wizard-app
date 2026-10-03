@@ -32,7 +32,7 @@ const STATUS_LABEL: Record<CallStatus, string> = {
 
 // The call screen's life cycle, gated by which plan (see
 // types/callPlans.ts) applies to this specific destination:
-//   resolving-plan       -> figuring out 9tel-vs-carrier + Airbundle status
+//   resolving-plan       -> figuring out destination + Airbundle status
 //   insufficient-credits -> Prepaid only: balance can't cover even one
 //                           billable minute — call is blocked with a top-up
 //                           CTA
@@ -69,8 +69,8 @@ export default function CallScreen() {
   };
 
   // Resolve which plan governs this specific call before doing anything
-  // else — 9tel-to-9tel calls on an Airbundle are ad-free; 9tel-to-carrier
-  // calls are Prepaid (credits-gated); anything we
+  // else — Airbundle minutes cover 9tel and carrier calls; carrier calls
+  // without an Airbundle use Prepaid (credits-gated); anything we
   // can't positively classify fails open to "unmetered" (today's
   // behavior) rather than guessing — see classifyDestination.
   useEffect(() => {

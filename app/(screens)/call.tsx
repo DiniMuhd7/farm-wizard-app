@@ -129,6 +129,13 @@ export default function CallScreen() {
       });
     };
 
+    // Twilio Video Rooms have their own media SDK/token flow. We request the
+    // room as soon as the keypad's video action opens this screen; voice calls
+    // retain the existing TwiML/Voice-SDK path below.
+    if (video === "true") {
+      router.replace({ pathname: "/(screens)/video-call", params: { number: displayNumber } });
+      return () => { cancelled = true; unsubscribe?.(); };
+    }
     const existingCall = getActiveVoiceCall();
     if (existingCall) {
       attach(existingCall);
@@ -381,4 +388,3 @@ const s = StyleSheet.create({
   },
   endText: { color: "#FFF", fontFamily: "Poppins-SemiBold", fontSize: 14 },
 });
-

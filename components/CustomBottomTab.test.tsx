@@ -8,7 +8,7 @@ function buildState(activeIndex = 0) {
     index: activeIndex,
     routes: [
       { key: "recent-1", name: "recent" },
-      { key: "stats-1", name: "stats" },
+      { key: "messages-1", name: "messages" },
       { key: "profile-1", name: "profile" },
     ],
   };
@@ -33,9 +33,9 @@ describe("CustomBottomTab", () => {
 
     // One press target per visible tab, each exposing both the icon and the
     // label as accessible children — not two separate tappable regions.
-    const statsTarget = renderer.root.findAllByProps({ accessibilityLabel: "Stats" })[0];
-    expect(typeof statsTarget.props.onPressIn).toBe("function");
-    expect(statsTarget.findByProps({ children: "Stats" })).toBeTruthy();
+    const messagesTarget = renderer.root.findAllByProps({ accessibilityLabel: "Messages" })[0];
+    expect(typeof messagesTarget.props.onPressIn).toBe("function");
+    expect(messagesTarget.findByProps({ children: "Messages" })).toBeTruthy();
 
     act(() => renderer.unmount());
   });
@@ -56,15 +56,15 @@ describe("CustomBottomTab", () => {
       );
     });
 
-    const statsTarget = renderer.root.findAllByProps({ accessibilityLabel: "Stats" })[0];
+    const messagesTarget = renderer.root.findAllByProps({ accessibilityLabel: "Messages" })[0];
     act(() => {
-      statsTarget.props.onPressIn();
+      messagesTarget.props.onPressIn();
     });
 
     expect(emit).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "tabPress", target: "stats-1" })
+      expect.objectContaining({ type: "tabPress", target: "messages-1" })
     );
-    expect(navigate).toHaveBeenCalledWith("stats");
+    expect(navigate).toHaveBeenCalledWith("messages");
 
     act(() => renderer.unmount());
   });
@@ -77,7 +77,7 @@ describe("CustomBottomTab", () => {
     act(() => {
       renderer = TestRenderer.create(
         <CustomBottomTab
-          state={buildState(1) as any} // "stats" already active
+          state={buildState(1) as any} // "messages" already active
           navigation={{ emit, navigate } as any}
           descriptors={{} as any}
           insets={{} as any}
@@ -85,11 +85,11 @@ describe("CustomBottomTab", () => {
       );
     });
 
-    const statsTarget = renderer.root.findAllByProps({ accessibilityLabel: "Stats" })[0];
-    expect(statsTarget.props.accessibilityState).toEqual({ selected: true });
+    const messagesTarget = renderer.root.findAllByProps({ accessibilityLabel: "Messages" })[0];
+    expect(messagesTarget.props.accessibilityState).toEqual({ selected: true });
 
     act(() => {
-      statsTarget.props.onPressIn();
+      messagesTarget.props.onPressIn();
     });
 
     expect(navigate).not.toHaveBeenCalled();

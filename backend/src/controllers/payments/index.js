@@ -79,6 +79,19 @@ function buildReturnUrl(baseUrl, status) {
   return `${baseUrl}/api/v1/payments/return${status ? `?status=${status}` : ""}`;
 }
 
+function validHostedCheckoutUrl(value) {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    // Flutterwave Standard returns an HTTPS-hosted link. Do not pass an
+    // arbitrary value returned by an upstream response on to the app's
+    // browser, where it could be opened as a deep link or local file.
+    return url.protocol === "https:" ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function sanitizeProviderMessage(message) {
   if (typeof message !== "string") return null;
   let sanitized = message.trim().replace(/\s+/g, " ");
@@ -336,12 +349,23 @@ async function createFlutterwaveCheckout(req, res, label, build) {
           name: req.user.fullName || "9tel user",
         },
         customizations: { title },
+        // Flutterwave Standard's checkout controls. These keep an abandoned
+        // hosted link from being usable indefinitely while still allowing a
+        // few legitimate card/OTP retries.
+        configurations: { session_duration: 30, max_retry_attempt: 5 },
         meta: { orderId: order._id.toString() },
       },
-      { headers: { Authorization: "Bearer " + process.env.FLW_SECRET_KEY } }
+      {
+        timeout: 15000,
+        headers: {
+          Authorization: "Bearer " + process.env.FLW_SECRET_KEY,
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+      }
     );
 
-    const paymentLink = response.data?.data?.link;
+    const paymentLink = validHostedCheckoutUrl(response.data?.data?.link);
     if (response.data?.status !== "success" || !paymentLink) {
       throw providerError(sanitizeProviderMessage(response.data?.message) || "Flutterwave didn't return a checkout link. Please try again.");
     }

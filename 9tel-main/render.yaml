@@ -1,0 +1,57 @@
+services:
+  - type: web
+    name: ninetel-backend-api
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGO_URI
+        sync: false
+      # Actual deployed backend base URL (no trailing slash); used for
+      # checkout return URLs and provider webhooks.
+      - key: PUBLIC_BASE_URL
+        value: https://ninetel-backend-api.onrender.com
+      - key: JWT_SECRET
+        sync: false
+      - key: ADMIN_BOOTSTRAP_SECRET
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASS
+        sync: false
+      - key: SENDGRID_API_KEY
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_API_KEY_SID
+        sync: false
+      - key: TWILIO_API_KEY_SECRET
+        sync: false
+      - key: TWILIO_TWIML_APP_SID
+        sync: false
+      - key: TWILIO_CALLER_ID
+        sync: false
+      - key: TWILIO_ALLOWED_DESTINATION_PREFIXES
+        sync: false
+      # Flutterwave webhook endpoint: ${PUBLIC_BASE_URL}/api/v1/payments/flutterwave/webhook
+      - key: FLW_SECRET_KEY
+        sync: false
+      - key: FLW_SECRET_HASH
+        sync: false
+      - key: FX_RATE_URL
+        value: https://open.er-api.com/v6/latest/USD
+      - key: NUMBER_PRICE_USD_CENTS
+        value: "500"
+      - key: NUMBER_PRICE_NGN
+        value: "3000"
+      - key: CARRIER_RATE_PER_MINUTE_CENTS
+        value: "9"
+      - key: TWILIO_APP_TO_APP_RATE_PER_MINUTE_CENTS
+        value: "1"

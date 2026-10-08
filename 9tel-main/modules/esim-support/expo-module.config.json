@@ -1,0 +1,5 @@
+{
+  "platforms": ["android", "ios"],
+  "android": { "modules": ["expo.modules.esimsupport.EsimSupportModule"] },
+  "ios": { "modules": ["EsimSupportModule"] }
+}

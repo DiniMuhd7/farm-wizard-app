@@ -1,0 +1,68 @@
+{
+  "project_info": {
+    "project_number": "31456730935",
+    "project_id": "dshub-f226b",
+    "storage_bucket": "dshub-f226b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:31456730935:android:e62d7fcf13982be2e204b2",
+        "android_client_info": {
+          "package_name": "com.dshub.lifegate"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "31456730935-njgullsb64og7ev9b5haaelp2qvojhj7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-V5g7jtyK09gp04UcZaXw6y1N9d-mt48"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "31456730935-njgullsb64og7ev9b5haaelp2qvojhj7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:31456730935:android:cf3cbd87e53b4b5be204b2",
+        "android_client_info": {
+          "package_name": "com.grow.farmwizard"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "31456730935-njgullsb64og7ev9b5haaelp2qvojhj7.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-V5g7jtyK09gp04UcZaXw6y1N9d-mt48"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "31456730935-njgullsb64og7ev9b5haaelp2qvojhj7.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
